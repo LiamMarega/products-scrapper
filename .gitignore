@@ -1,0 +1,40 @@
+# Node modules and dependency dirs
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment and local files
+.env
+.env.*
+
+# OS & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Scraper/output files
+scrape.xlsx
+*.xlsx
+*.json
+
+# Logs, cache, temp
+logs/
+*.log
+*.tmp
+.cache/
+*.pid
+
+# Puppeteer browser cache/profiles
+puppeteer_cache/
+.chromium/
+
+# Ignore output from import script
+import-products-out/
+import-products*.xlsx
+import-products*.json
+
+# Misc
+*~
+# End Generation Here
+```
