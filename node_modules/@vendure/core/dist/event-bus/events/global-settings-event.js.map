@@ -1,0 +1,1 @@
+{"version":3,"file":"global-settings-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/global-settings-event.ts"],"names":[],"mappings":";;;AAIA,kEAA6D;AAE7D;;;;;;;;GAQG;AACH,MAAa,mBAAoB,SAAQ,yCAA6D;IAClG,YAAY,GAAmB,EAAE,MAAsB,EAAE,KAAiC;QACtF,KAAK,CAAC,MAAM,EAAE,SAAS,EAAE,GAAG,EAAE,KAAK,CAAC,CAAC;IACzC,CAAC;CACJ;AAJD,kDAIC"}

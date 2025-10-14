@@ -1,0 +1,1 @@
+{"version":3,"file":"tax-rate-modification-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/tax-rate-modification-event.ts"],"names":[],"mappings":";;;AAEA,oDAAgD;AAEhD;;;;;;;GAOG;AACH,MAAa,wBAAyB,SAAQ,4BAAY;IACtD,YAAmB,GAAmB,EAAS,OAAgB;QAC3D,KAAK,EAAE,CAAC;QADO,QAAG,GAAH,GAAG,CAAgB;QAAS,YAAO,GAAP,OAAO,CAAS;IAE/D,CAAC;CACJ;AAJD,4DAIC"}

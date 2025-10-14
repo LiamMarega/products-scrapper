@@ -1,0 +1,1 @@
+{"version":3,"file":"fulfillment-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/fulfillment-event.ts"],"names":[],"mappings":";;;AAKA,kEAA6D;AAa7D;;;;;;;GAOG;AACH,MAAa,gBAAiB,SAAQ,yCAAuD;IACzF,YAAY,GAAmB,EAAE,MAAmB,EAAE,KAA8B;QAChF,KAAK,CAAC,MAAM,EAAE,SAAS,EAAE,GAAG,EAAE,KAAK,CAAC,CAAC;IACzC,CAAC;CACJ;AAJD,4CAIC"}

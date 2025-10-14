@@ -1,0 +1,1 @@
+{"version":3,"file":"promotion-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/promotion-event.ts"],"names":[],"mappings":";;;AAKA,kEAA6D;AAI7D;;;;;;;GAOG;AACH,MAAa,cAAe,SAAQ,yCAAkD;IAClF,YACI,GAAmB,EACnB,MAAiB,EACjB,IAAuC,EACvC,KAA2B;QAE3B,KAAK,CAAC,MAAM,EAAE,IAAI,EAAE,GAAG,EAAE,KAAK,CAAC,CAAC;IACpC,CAAC;CACJ;AATD,wCASC"}

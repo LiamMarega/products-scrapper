@@ -1,0 +1,1 @@
+{"version":3,"file":"attempted-login-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/attempted-login-event.ts"],"names":[],"mappings":";;;AAEA,oDAAgD;AAEhD;;;;;;;;GAQG;AACH,MAAa,mBAAoB,SAAQ,4BAAY;IACjD,YAAmB,GAAmB,EAAS,QAAgB,EAAS,UAAmB;QACvF,KAAK,EAAE,CAAC;QADO,QAAG,GAAH,GAAG,CAAgB;QAAS,aAAQ,GAAR,QAAQ,CAAQ;QAAS,eAAU,GAAV,UAAU,CAAS;IAE3F,CAAC;CACJ;AAJD,kDAIC"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"account-registration-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/account-registration-event.ts"],"names":[],"mappings":";;;AAEA,oDAAgD;AAEhD;;;;;;;GAOG;AACH,MAAa,wBAAyB,SAAQ,4BAAY;IACtD,YAAmB,GAAmB,EAAS,IAAU;QACrD,KAAK,EAAE,CAAC;QADO,QAAG,GAAH,GAAG,CAAgB;QAAS,SAAI,GAAJ,IAAI,CAAM;IAEzD,CAAC;CACJ;AAJD,4DAIC"}

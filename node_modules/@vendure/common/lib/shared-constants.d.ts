@@ -1,0 +1,16 @@
+export declare const API_PORT = 3000;
+export declare const ADMIN_API_PATH = "admin-api";
+export declare const SHOP_API_PATH = "shop-api";
+export declare const DEFAULT_CHANNEL_CODE = "__default_channel__";
+export declare const SUPER_ADMIN_ROLE_CODE = "__super_admin_role__";
+export declare const SUPER_ADMIN_ROLE_DESCRIPTION = "SuperAdmin";
+export declare const SUPER_ADMIN_USER_IDENTIFIER = "superadmin";
+export declare const SUPER_ADMIN_USER_PASSWORD = "superadmin";
+export declare const CUSTOMER_ROLE_CODE = "__customer_role__";
+export declare const CUSTOMER_ROLE_DESCRIPTION = "Customer";
+export declare const ROOT_COLLECTION_NAME = "__root_collection__";
+export declare const DEFAULT_AUTH_TOKEN_HEADER_KEY = "vendure-auth-token";
+export declare const DEFAULT_COOKIE_NAME = "session";
+export declare const DEFAULT_CHANNEL_TOKEN_KEY = "vendure-token";
+export type CREATING_VENDURE_APP = 'CREATING_VENDURE_APP';
+export declare const CREATING_VENDURE_APP: CREATING_VENDURE_APP;

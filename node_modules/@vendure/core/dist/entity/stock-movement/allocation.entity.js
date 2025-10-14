@@ -1,0 +1,41 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Allocation = void 0;
+const generated_types_1 = require("@vendure/common/lib/generated-types");
+const typeorm_1 = require("typeorm");
+const order_line_entity_1 = require("../order-line/order-line.entity");
+const stock_movement_entity_1 = require("./stock-movement.entity");
+/**
+ * @description
+ * An Allocation is created for each ProductVariant in an Order when the checkout is completed
+ * (as configured by the {@link StockAllocationStrategy}. This prevents stock being sold twice.
+ *
+ * @docsCategory entities
+ * @docsPage StockMovement
+ */
+let Allocation = class Allocation extends stock_movement_entity_1.StockMovement {
+    constructor(input) {
+        super(input);
+        this.type = generated_types_1.StockMovementType.ALLOCATION;
+    }
+};
+exports.Allocation = Allocation;
+__decorate([
+    (0, typeorm_1.Index)(),
+    (0, typeorm_1.ManyToOne)(type => order_line_entity_1.OrderLine, orderLine => orderLine.allocations),
+    __metadata("design:type", order_line_entity_1.OrderLine)
+], Allocation.prototype, "orderLine", void 0);
+exports.Allocation = Allocation = __decorate([
+    (0, typeorm_1.ChildEntity)(),
+    __metadata("design:paramtypes", [Object])
+], Allocation);
+//# sourceMappingURL=allocation.entity.js.map

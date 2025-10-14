@@ -1,0 +1,1 @@
+{"version":3,"file":"identifier-change-request-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/identifier-change-request-event.ts"],"names":[],"mappings":";;;AAEA,oDAAgD;AAEhD;;;;;;;GAOG;AACH,MAAa,4BAA6B,SAAQ,4BAAY;IAC1D,YAAmB,GAAmB,EAAS,IAAU;QACrD,KAAK,EAAE,CAAC;QADO,QAAG,GAAH,GAAG,CAAgB;QAAS,SAAI,GAAJ,IAAI,CAAM;IAEzD,CAAC;CACJ;AAJD,oEAIC"}

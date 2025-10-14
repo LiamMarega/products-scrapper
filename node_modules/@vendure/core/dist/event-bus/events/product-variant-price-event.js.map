@@ -1,0 +1,1 @@
+{"version":3,"file":"product-variant-price-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/product-variant-price-event.ts"],"names":[],"mappings":";;;AAIA,kEAA6D;AAI7D;;;;;;;GAOG;AACH,MAAa,wBAAyB,SAAQ,yCAG7C;IACG,YACI,GAAmB,EACnB,MAA6B,EAC7B,IAAuC,EACvC,KAAgC;QAEhC,KAAK,CAAC,MAAM,EAAE,IAAI,EAAE,GAAG,EAAE,KAAK,CAAC,CAAC;IACpC,CAAC;CACJ;AAZD,4DAYC"}

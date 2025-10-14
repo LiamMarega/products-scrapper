@@ -1,0 +1,1 @@
+{"version":3,"file":"account-verified-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/account-verified-event.ts"],"names":[],"mappings":";;;AAEA,oDAAgD;AAEhD;;;;;;;GAOG;AACH,MAAa,oBAAqB,SAAQ,4BAAY;IAClD,YAAmB,GAAmB,EAAS,QAAkB;QAC7D,KAAK,EAAE,CAAC;QADO,QAAG,GAAH,GAAG,CAAgB;QAAS,aAAQ,GAAR,QAAQ,CAAU;IAEjE,CAAC;CACJ;AAJD,oDAIC"}

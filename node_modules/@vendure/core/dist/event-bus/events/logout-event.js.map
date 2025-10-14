@@ -1,0 +1,1 @@
+{"version":3,"file":"logout-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/logout-event.ts"],"names":[],"mappings":";;;AAEA,oDAAgD;AAEhD;;;;;;GAMG;AACH,MAAa,WAAY,SAAQ,4BAAY;IACzC,YAAmB,GAAmB;QAClC,KAAK,EAAE,CAAC;QADO,QAAG,GAAH,GAAG,CAAgB;IAEtC,CAAC;CACJ;AAJD,kCAIC"}

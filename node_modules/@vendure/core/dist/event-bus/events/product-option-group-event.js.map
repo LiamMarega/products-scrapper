@@ -1,0 +1,1 @@
+{"version":3,"file":"product-option-group-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/product-option-group-event.ts"],"names":[],"mappings":";;;AAQA,kEAA6D;AAO7D;;;;;;;GAOG;AACH,MAAa,uBAAwB,SAAQ,yCAG5C;IACG,YACI,GAAmB,EACnB,MAA0B,EAC1B,IAAuC,EACvC,KAAoC;QAEpC,KAAK,CAAC,MAAM,EAAE,IAAI,EAAE,GAAG,EAAE,KAAK,CAAC,CAAC;IACpC,CAAC;CACJ;AAZD,0DAYC"}

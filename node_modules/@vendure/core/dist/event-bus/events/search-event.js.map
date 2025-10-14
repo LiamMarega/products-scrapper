@@ -1,0 +1,1 @@
+{"version":3,"file":"search-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/search-event.ts"],"names":[],"mappings":";;;AAGA,oDAAgD;AAMhD;;;;;;;GAOG;AACH,MAAa,WAAY,SAAQ,4BAAY;IACzC,YAAmB,GAAmB,EAAS,KAA0B;QACrE,KAAK,EAAE,CAAC;QADO,QAAG,GAAH,GAAG,CAAgB;QAAS,UAAK,GAAL,KAAK,CAAqB;IAEzE,CAAC;CACJ;AAJD,kCAIC"}

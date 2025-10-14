@@ -1,0 +1,1 @@
+{"version":3,"file":"collection-event.js","sourceRoot":"","sources":["../../../src/event-bus/events/collection-event.ts"],"names":[],"mappings":";;;AAKA,kEAA6D;AAI7D;;;;;;;GAOG;AACH,MAAa,eAAgB,SAAQ,yCAAoD;IACrF,YACI,GAAmB,EACnB,MAAkB,EAClB,IAAuC,EACvC,KAA4B;QAE5B,KAAK,CAAC,MAAM,EAAE,IAAI,EAAE,GAAG,EAAE,KAAK,CAAC,CAAC;IACpC,CAAC;CACJ;AATD,0CASC"}

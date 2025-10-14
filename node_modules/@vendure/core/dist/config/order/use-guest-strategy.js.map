@@ -1,0 +1,1 @@
+{"version":3,"file":"use-guest-strategy.js","sourceRoot":"","sources":["../../../src/config/order/use-guest-strategy.ts"],"names":[],"mappings":";;;AAGA,iEAAgG;AAEhG;;;;;;GAMG;AACH,MAAa,gBAAgB;IACzB,KAAK,CAAC,GAAmB,EAAE,UAAiB,EAAE,aAAoB;QAC9D,OAAO,UAAU,CAAC,KAAK,CAAC,GAAG,CAAC,wCAAiB,CAAC,CAAC;IACnD,CAAC;CACJ;AAJD,4CAIC"}
