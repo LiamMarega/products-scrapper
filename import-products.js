@@ -25,7 +25,7 @@ const VENDURE_CHANNEL = process.env.VENDURE_CHANNEL || null;
 const DEFAULT_STOCK_ON_HAND = Number(process.env.DEFAULT_STOCK_ON_HAND || 100);
 
 // Idioma por defecto
-const DEFAULT_LANGUAGE = 'es';
+const DEFAULT_LANGUAGE = 'en';
 
 // -------------------- Utils --------------------
 function toSlug(name) {
