@@ -11,12 +11,12 @@ import FormData from 'form-data';
 import slugify from 'slugify';
 
 // -------------------- Config --------------------
-const ADMIN_API = process.env.ADMIN_API || 'http://127.0.0.1:3000/admin-api';
+const ADMIN_API = process.env.ADMIN_API || 'http://localhost:3000/admin-api';
 const ADMIN_USER = process.env.ADMIN_USER || 'superadmin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'superadmin';
 
 // Ruta XLSX por defecto
-const XLSX_PATH = process.env.XLSX_PATH || path.resolve(process.cwd(), 'bedroom.xlsx');
+const XLSX_PATH = process.env.XLSX_PATH || path.resolve(process.cwd(), 'living-room.xlsx');
 
 // Canal de Vendure (null = default channel)
 const VENDURE_CHANNEL = process.env.VENDURE_CHANNEL || null;
@@ -30,6 +30,32 @@ const DEFAULT_LANGUAGE = 'es';
 // -------------------- Utils --------------------
 function toSlug(name) {
   return slugify(String(name || ''), { lower: true, strict: true });
+}
+
+// Helper para convertir boolean a GlobalFlag enum
+function toGlobalFlag(val) {
+  if (val === true) return 'TRUE';
+  if (val === false) return 'FALSE';
+  return 'INHERIT';
+}
+
+// Helper para reintentos con backoff exponencial
+async function withRetry(fn, { retries = 3, baseMs = 300 } = {}) {
+  let lastErr;
+  for (let i = 0; i < retries; i++) {
+    try { 
+      return await fn(); 
+    } 
+    catch (e) {
+      lastErr = e;
+      const msg = e?.response?.errors?.[0]?.message || e.message || String(e);
+      // reintentar sólo para lock/errores transitorios
+      if (!/database is locked|SQLITE_BUSY|timeout/i.test(msg)) throw e;
+      const wait = baseMs * Math.pow(2, i);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+  throw lastErr;
 }
 
 function parsePriceToCents(val) {
@@ -188,7 +214,7 @@ function authedClient(cookie) {
 // -------------------- Facet & Collection Helpers --------------------
 // Cache en memoria por ejecución
 const categoryFacetCache = { facetId: null, valueByCode: new Map() };
-const collectionCache = new Map(); // slug -> id
+const collectionCache = new Map(); // "parentId::slug" -> id (para jerarquías)
 
 function toCode(str) {
   return String(str).trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
@@ -239,18 +265,30 @@ async function ensureCategoryFacetValue(client, name) {
 // Asegura Collection (filtro por facetValueIds del facet "category")
 async function ensureCategoryCollection(client, categoryName, facetValueId, parent = null) {
   const slug = toCode(categoryName);
-  if (collectionCache.has(slug)) return collectionCache.get(slug);
+  
+  // Cache key único por slug + parentId para soportar jerarquías
+  const cacheKey = parent ? `${parent}::${slug}` : slug;
+  
+  if (collectionCache.has(cacheKey)) {
+    return collectionCache.get(cacheKey);
+  }
 
+  // Buscar colección existente por slug
   const found = await client.request(GET_COLLECTION_BY_SLUG, { slug });
   if (found?.collection?.id) {
-    collectionCache.set(slug, found.collection.id);
+    collectionCache.set(cacheKey, found.collection.id);
     return found.collection.id;
   }
 
+  // Crear nueva colección
   const input = {
-    slug,
     isPrivate: false,
-    translations: [{ languageCode: DEFAULT_LANGUAGE, name: categoryName }],
+    translations: [{ 
+      languageCode: DEFAULT_LANGUAGE, 
+      name: categoryName,
+      slug: slug,
+      description: categoryName  // Requerido por Vendure
+    }],
     parentId: parent || undefined,
     inheritFilters: !!parent,   // heredar si es hija
     filters: [
@@ -261,10 +299,54 @@ async function ensureCategoryCollection(client, categoryName, facetValueId, pare
     ],
   };
 
-  const res = await client.request(CREATE_COLLECTION, { input });
+  console.log(`  → Creando colección: ${categoryName}${parent ? ' (hijo)' : ' (raíz)'}`);
+  const res = await withRetry(() => client.request(CREATE_COLLECTION, { input }));
   const id = res?.createCollection?.id;
-  if (id) collectionCache.set(slug, id);
+  
+  if (id) {
+    collectionCache.set(cacheKey, id);
+    console.log(`    ✓ Colección creada: ${categoryName} (ID: ${id})`);
+  }
+  
   return id;
+}
+
+// Asegura jerarquía completa de colecciones (Living Room|Sectional|Stationary)
+// Retorna: { collectionIds: [...], facetValueIds: [...] }
+async function ensureCategoryHierarchy(client, categoryPath) {
+  if (!categoryPath) return { collectionIds: [], facetValueIds: [] };
+  
+  const categories = categoryPath.split('|').map(s => s.trim()).filter(Boolean);
+  if (categories.length === 0) return { collectionIds: [], facetValueIds: [] };
+  
+  console.log(`  → Procesando jerarquía: ${categories.join(' → ')}`);
+  
+  const collectionIds = [];
+  const facetValueIds = [];
+  let parentId = null;
+  
+  // Crear cada nivel de la jerarquía
+  for (let i = 0; i < categories.length; i++) {
+    const categoryName = categories[i];
+    
+    // 1. Asegurar FacetValue
+    const facetValueId = await ensureCategoryFacetValue(client, categoryName);
+    if (facetValueId) {
+      facetValueIds.push(facetValueId);
+    }
+    
+    // 2. Asegurar Collection (con parentId del nivel anterior)
+    if (facetValueId) {
+      const collectionId = await ensureCategoryCollection(client, categoryName, facetValueId, parentId);
+      if (collectionId) {
+        collectionIds.push(collectionId);
+        parentId = collectionId; // El siguiente nivel será hijo de este
+      }
+    }
+  }
+  
+  console.log(`    ✓ ${collectionIds.length} colección(es) jerárquica(s) asegurada(s)`);
+  return { collectionIds, facetValueIds };
 }
 
 // Normaliza atributos de variantes (attribute_pa_size → size)
@@ -514,9 +596,12 @@ const CREATE_FACET_VALUE = `
   }
 `;
 
-const ASSIGN_FACETS_TO_PRODUCT = `
-  mutation AssignFacetValuesToProduct($productId: ID!, $facetValueIds: [ID!]!) {
-    assignFacetValuesToProduct(productId: $productId, facetValueIds: $facetValueIds) { id }
+const UPDATE_PRODUCT = `
+  mutation UpdateProduct($input: UpdateProductInput!) {
+    updateProduct(input: $input) {
+      id
+      facetValues { id name }
+    }
   }
 `;
 
@@ -528,6 +613,19 @@ const GET_COLLECTION_BY_SLUG = `
 const CREATE_COLLECTION = `
   mutation CreateCollection($input: CreateCollectionInput!) {
     createCollection(input: $input) { id slug name }
+  }
+`;
+
+// Agregar/quitar productos de una colección
+const ADD_PRODUCTS_TO_COLLECTION = `
+  mutation AddProductsToCollection($collectionId: ID!, $productIds: [ID!]!) {
+    addProductsToCollection(collectionId: $collectionId, productIds: $productIds) { id }
+  }
+`;
+
+const REMOVE_PRODUCTS_FROM_COLLECTION = `
+  mutation RemoveProductsFromCollection($collectionId: ID!, $productIds: [ID!]!) {
+    removeProductsFromCollection(collectionId: $collectionId, productIds: $productIds) { id }
   }
 `;
 
@@ -656,32 +754,48 @@ function readXlsxRows(xlsxPath) {
       // ========== CATEGORÍAS (Facets & Collections) ==========
       const categoriesRaw = String(row.categories || '').trim();
       if (categoriesRaw) {
-        const categoryList = categoriesRaw.split('|').map(s => s.trim()).filter(Boolean);
+        console.log(`→ Procesando categorías: ${categoriesRaw}`);
         
-        if (categoryList.length > 0) {
-          console.log(`→ Procesando ${categoryList.length} categoría(s): ${categoryList.join(', ')}`);
+        // 1) Crear jerarquía de colecciones y obtener FacetValues
+        const { collectionIds, facetValueIds } = await ensureCategoryHierarchy(client, categoriesRaw);
+        
+        // 2) Asignar FacetValues al producto usando updateProduct
+        if (facetValueIds.length > 0) {
+          try {
+            await withRetry(() => client.request(UPDATE_PRODUCT, {
+              input: {
+                id: product.id,
+                facetValueIds
+              }
+            }));
+            console.log(`  ✓ ${facetValueIds.length} FacetValue(s) asignados al producto`);
+          } catch (e) {
+            const gErr = e?.response?.errors?.[0];
+            const extra = gErr ? ` | GraphQL: ${gErr.message}` : '';
+            console.warn(`  ⚠ Error asignando FacetValues: ${e.message}${extra}`);
+          }
+        }
+        
+        // 3) Vincular explícitamente el producto a TODAS las colecciones de la jerarquía
+        if (collectionIds.length > 0) {
+          console.log(`  → Vinculando producto a ${collectionIds.length} colección(es)...`);
           
-          // 1) Asegurar (o crear) FacetValues y asignarlos al producto
-          const facetValueIds = [];
-          for (const catName of categoryList) {
-            const fvId = await ensureCategoryFacetValue(client, catName);
-            if (fvId) facetValueIds.push(fvId);
+          let linkedCount = 0;
+          for (const collectionId of collectionIds) {
+            try {
+              await withRetry(() => client.request(ADD_PRODUCTS_TO_COLLECTION, {
+                collectionId,
+                productIds: [product.id]
+              }));
+              linkedCount++;
+            } catch (e) {
+              const gErr = e?.response?.errors?.[0];
+              const extra = gErr ? ` | GraphQL: ${gErr.message}` : '';
+              console.warn(`    ⚠ Error vinculando a colección ${collectionId}: ${e.message}${extra}`);
+            }
           }
           
-          if (facetValueIds.length) {
-            await client.request(ASSIGN_FACETS_TO_PRODUCT, {
-              productId: product.id,
-              facetValueIds
-            });
-            console.log(`  ✓ ${facetValueIds.length} FacetValue(s) asignados`);
-          }
-          
-          // 2) Asegurar Collections por cada categoría
-          for (const catName of categoryList) {
-            const fvId = await ensureCategoryFacetValue(client, catName);
-            await ensureCategoryCollection(client, catName, fvId, /* parentId */ null);
-          }
-          console.log(`  ✓ Collection(s) aseguradas`);
+          console.log(`  ✓ Producto vinculado exitosamente a ${linkedCount} colección(es)`);
         }
       }
 
@@ -733,7 +847,7 @@ function readXlsxRows(xlsxPath) {
                 sku: variantSku,
                 price: variantPrice,
                 stockOnHand: v.stock_quantity || DEFAULT_STOCK_ON_HAND,
-                trackInventory: true,
+                trackInventory: toGlobalFlag(v.trackInventory),
                 translations: [{ 
                   languageCode: DEFAULT_LANGUAGE, 
                   name: `${name} - ${variantName}` 
@@ -754,7 +868,7 @@ function readXlsxRows(xlsxPath) {
               sku,
               price: priceCents,
               stockOnHand: DEFAULT_STOCK_ON_HAND,
-              trackInventory: true,
+              trackInventory: toGlobalFlag(),
               translations: [{ languageCode: DEFAULT_LANGUAGE, name }],
               ...(featuredAssetId && { featuredAssetId }),
             }];
@@ -772,7 +886,7 @@ function readXlsxRows(xlsxPath) {
             sku,
             price: priceCents,
             stockOnHand: DEFAULT_STOCK_ON_HAND,
-            trackInventory: true,
+            trackInventory: toGlobalFlag(),
             translations: [{ languageCode: DEFAULT_LANGUAGE, name }],
             ...(featuredAssetId && { featuredAssetId }),
           }];
@@ -789,7 +903,7 @@ function readXlsxRows(xlsxPath) {
           sku,
           price: priceCents,
           stockOnHand: DEFAULT_STOCK_ON_HAND,
-          trackInventory: true,
+          trackInventory: toGlobalFlag(),
           translations: [{ languageCode: DEFAULT_LANGUAGE, name }],
           ...(featuredAssetId && { featuredAssetId }),
         }];
