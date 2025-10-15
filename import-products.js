@@ -831,7 +831,9 @@ function readXlsxRows(xlsxPath) {
               // Nombre de la variante con atributos
               const variantName = Object.values(v.attributes || {}).join(' - ');
               const variantSku = v.sku || `${row.sku || row.product_id || slug}-${v.variation_id}`;
-              const variantPrice = v.display_price ? Math.round(v.display_price * 100) : parsePriceToCents(row.price);
+            const variantPrice = v.display_price != null && v.display_price !== ''
+  ? parsePriceToCents(v.display_price)
+  : parsePriceToCents(row.price);
               
               // Subir imagen de variante si existe
               let variantAssetId = featuredAssetId;
