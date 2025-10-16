@@ -1,297 +1,379 @@
-# 🛒 WooCommerce to Vendure Product Pipeline
+# 🛒 WooCommerce to Vendure Product Scraper & Importer
 
-Pipeline completo para scrapear productos de WooCommerce e importarlos a Vendure con soporte completo de variantes.
+Pipeline simple para scrapear productos de WooCommerce e importarlos a Vendure.
 
 ## 🚀 Quick Start
 
-### 1. Scrapear productos de WooCommerce
+### 1. Instalar dependencias
+
+```bash
+npm install
+```
+
+### 2. Configuración
+
+Crea un archivo `.env` en la raíz del proyecto con las credenciales de tu servidor Vendure:
+
+```bash
+# Vendure API Configuration
+ADMIN_API=http://localhost:3000/admin-api
+ADMIN_USER=superadmin
+ADMIN_PASS=superadmin
+DEFAULT_STOCK_ON_HAND=100
+DEFAULT_LANGUAGE=en
+```
+
+### 3. Setup de Vendure (Primera vez)
+
+Si es la primera vez que usas el importador, necesitas configurar la Tax Zone:
+
+```bash
+node setup-vendure.js
+```
+
+Este paso solo se hace una vez. El script configurará automáticamente todo lo necesario.
+
+### 4. Scrapear productos
 
 ```bash
 node scraper.js \
-  --startUrl="https://todaysfurniture305.com/product-category/bedroom/" \
-  --out="bedroom.xlsx" \
-  --jsonOut="bedroom.json" \
-  --concurrency=3 \
-  --maxPages=5
+  --startUrl="https://todaysfurniture305.com/product-category/living-room/" \
+  --out="living-room.csv"
 ```
 
-**Opciones:**
-- `--startUrl`: URL de la categoría a scrapear (requerido)
-- `--out`: Archivo Excel de salida (default: `scrape.xlsx`)
-- `--jsonOut`: Archivo JSON opcional para debugging
-- `--concurrency`: Páginas a scrapear en paralelo (default: 2)
-- `--maxPages`: Máximo de páginas a scrapear (default: todas)
-- `--delayMs`: Delay base entre requests (default: 400ms)
-- `--headless`: Modo headless (default: `true`)
+**Opciones principales:**
+- `--startUrl`: URL de la categoría (requerido)
+- `--out`: Archivo CSV de salida (default: `vendure-import.csv`)
+- `--concurrency`: Páginas en paralelo (default: 2)
+- `--maxPages`: Máximo de páginas (default: todas)
 
-### 2. Importar a Vendure
+### 5. Importar a Vendure
+
+**Asegúrate que tu servidor Vendure esté corriendo** (`http://localhost:3000`)
 
 ```bash
-# Configurar variables de entorno
-export ADMIN_API="http://localhost:3000/admin-api"
-export ADMIN_USER="superadmin"
-export ADMIN_PASS="superadmin"
-export XLSX_PATH="$(pwd)/bedroom.xlsx"
-export DEFAULT_STOCK_ON_HAND=50
+# Opción 1: Usando variable de entorno
+export CSV_PATH="$(pwd)/living-room.csv"
+node import-products.js
 
-# Ejecutar importación
+# Opción 2: Directamente con el default (living-room.csv)
 node import-products.js
 ```
 
-**Variables de entorno:**
-- `ADMIN_API`: URL del Admin API de Vendure (default: `http://127.0.0.1:3000/admin-api`)
-- `ADMIN_USER`: Usuario admin (default: `superadmin`)
-- `ADMIN_PASS`: Password admin (default: `superadmin`)
-- `XLSX_PATH`: Ruta al archivo Excel (default: `./living-room.xlsx`)
-- `DEFAULT_STOCK_ON_HAND`: Stock por defecto (default: 100)
-- `VENDURE_CHANNEL`: Token del canal (opcional, para multi-canal)
+¡Listo! Los productos se importarán a tu servidor Vendure.
 
-## 📦 Características
+### 6. Ver tus productos
 
-### Scraper (scraper.js)
-- ✅ Extrae título, descripciones (larga + corta), slug, SKU
-- ✅ Maneja precios ocultos ("Please register to see price")
-- ✅ Descarga todas las imágenes (srcset, lazy-loading)
-- ✅ Soporte completo para productos variables de WooCommerce
-- ✅ Extrae atributos de variantes (color, talla, etc.)
-- ✅ Dimensiones, categorías, tags, descuentos
-- ✅ Reintentos automáticos y manejo de errores
-- ✅ Exporta a Excel + JSON
+Accede al Admin UI: `http://localhost:3000/admin`
 
-### Importador (import-products.js)
-- ✅ Login robusto con manejo de cookies múltiples
-- ✅ Sube imágenes con multipart (operaciones + map)
-- ✅ Crea productos con metadata completa
-- ✅ **Soporte automático de variantes**:
-  - Crea OptionGroups (Size, Color, etc.)
-  - Crea Options (S, M, L, Black, White, etc.)
-  - Vincula opciones a productos
-  - Crea ProductVariants con combinaciones correctas
-  - Normaliza atributos de WooCommerce (attribute_pa_size → size)
-- ✅ Maneja SKUs, precios y stock por variante
-- ✅ Sube imágenes individuales por variante
-- ✅ Fallback a producto simple si no hay variantes
-- ✅ **Categorías y taxonomía**:
-  - Crea Facet "category" público automáticamente
-  - Genera FacetValues por cada categoría del Excel
-  - Asigna FacetValues a productos
-  - Crea Collections con filtros dinámicos (facet-value-filter)
-  - Soporte para jerarquías (parentId, inheritFilters)
+## 📦 Estructura del Proyecto
 
-## 🎯 Flujo de Trabajo
-
-### Para productos simples (sin variantes):
-1. Scraper extrae: `title`, `slug`, `sku`, `price`, `images`, `descriptions`
-2. Importador crea:
-   - 1 Product
-   - 1 ProductVariant con el precio y SKU
-
-### Para productos variables (con variantes):
-1. Scraper extrae todo lo anterior + `variants_json` con:
-   - `attributes`: `{ attribute_pa_color: "black", attribute_pa_size: "large" }`
-   - `sku`, `price`, `image` por variante
-   - `stock_quantity`
-
-2. Importador detecta `variants_json` y:
-   - Crea/busca OptionGroups (Color, Size)
-   - Crea/busca Options (Black, Large)
-   - Vincula grupos al producto
-   - Crea N ProductVariants, cada una con:
-     - SKU único
-     - Precio específico
-     - Stock específico
-     - Imagen específica (si difiere)
-     - optionIds correctos
-
-## 🏷️ Sistema de Categorías
-
-El importador implementa el sistema de categorías de Vendure usando **Facets** y **Collections**:
-
-### Facets & FacetValues
-- **Facet**: Agrupación de valores (ej: "category")
-- **FacetValue**: Valor específico (ej: "Living Room", "Bedroom")
-- Los Facets pueden ser públicos (visibles en Shop API y filtrables) o privados (solo Admin)
-- El importador crea automáticamente el Facet "category" como público
-
-### Collections
-- Agrupaciones dinámicas de productos basadas en filtros
-- Se auto-pueblan según las reglas definidas (ej: "incluye productos con FacetValue 'Living Room'")
-- Soportan jerarquías (parent/child) con herencia de filtros
-- El importador usa `facet-value-filter` para vincular cada Collection a su FacetValue
-
-### Flujo de categorías
-1. **Scraper** extrae categorías de WooCommerce → columna `categories` (separadas por `|`)
-2. **Importador** lee `categories` y:
-   - Crea FacetValues en el Facet "category" (si no existen)
-   - Asigna esos FacetValues al producto
-   - Crea Collections con filtros que apuntan a esos FacetValues
-3. **Vendure** auto-puebla las Collections según los filtros definidos
-
-### Ejemplo
 ```
-Product: "Modern Sofa"
-categories: "Living Room|Sofas|Modern"
+products-scrapper/
+├── scraper.js           # Scraper de WooCommerce → CSV
+├── import-products.js   # Importador CSV → Vendure (GraphQL API)
+├── setup-vendure.js     # Script de configuración inicial (Tax Zone)
+├── package.json         # Dependencias
+├── .env                 # Credenciales (no versionado, crealo tú)
+├── .gitignore          
+├── README.md            # Esta guía
+├── CATEGORIES.md        # Documentación detallada de categorías
+├── full-pipeline.sh     # Script para scrapear e importar todo
+├── import-all.sh        # Script para importar múltiples CSV
+└── *.csv                # Archivos generados por el scraper
 ```
-→ Crea 3 FacetValues: `living-room`, `sofas`, `modern`  
-→ Asigna esos 3 FacetValues al producto  
-→ Crea 3 Collections con filtros correspondientes  
-→ El producto aparece automáticamente en las 3 colecciones
 
-## 📊 Estructura del Excel
+## 📄 Formato CSV Generado
+
+El scraper genera un CSV con el siguiente formato compatible con Vendure:
 
 | Columna | Descripción |
 |---------|-------------|
-| `title` | Nombre del producto |
-| `slug` | URL slug (auto si falta) |
-| `sku` | SKU base del producto |
-| `description_text` | Descripción larga (texto plano) |
-| `description_html` | Descripción larga (HTML) |
-| `short_description_text` | Descripción corta (texto) |
-| `short_description_html` | Descripción corta (HTML) |
-| `price` | Precio (si visible) |
-| `price_hidden_requires_login` | TRUE/FALSE |
-| `images` | URLs separadas por `\|` |
-| `thumbnail` | URL de imagen principal |
-| `variants_json` | JSON con variantes de WooCommerce |
-| `categories` | Categorías separadas por `\|` |
-| `tags_extra` | Tags separadas por `\|` |
-| `product_id` | ID original de WooCommerce |
-| `product_type` | simple/variable |
-| `dimensions_raw` | Dimensiones extraídas |
-| `discount_label` | Etiqueta de descuento |
-| `countdown` | JSON con countdown data |
+| `name` | Nombre del producto |
+| `slug` | URL slug |
+| `description` | Descripción del producto |
+| `sku` | SKU (se usa el slug si falta) |
+| `price` | Precio en formato decimal (ej: 350.00) |
+| `stockOnHand` | Stock disponible (default: 100) |
+| `taxCategory` | Categoría de impuestos (default: standard) |
+| `trackInventory` | true/false |
+| `assets` | URLs de imágenes separadas por `\|` |
+| `facets` | Categorías en formato `category:Living Room\|category:Sofas` |
 
-## 🔧 Troubleshooting
+## 🎯 Lo que hace el Importador
 
-### "No llegó cookie de sesión"
-- Verifica que Vendure esté corriendo en `http://localhost:3000`
-- Revisa las credenciales de admin
+1. **Login**: Se conecta a tu servidor Vendure usando las credenciales del `.env`
+2. **Crear Productos**: Crea cada producto con su información
+3. **Crear Variantes**: Crea la variante por defecto con precio y stock
+4. **Categorías**: 
+   - Crea automáticamente un Facet "category" público
+   - Crea FacetValues por cada categoría
+   - Asigna las categorías a los productos
+5. **Imágenes**: Descarga y sube las imágenes a Vendure
 
-### "Error subiendo asset"
-- Las imágenes muy grandes pueden fallar (timeout)
-- El scraper solo sube las primeras 5 imágenes para evitar saturar
+## 🔧 Scripts de Automatización
 
-### "createProductVariants no devolvió ID válido"
-- Puede ser un error de validación (SKU duplicado, precio inválido)
-- Revisa los logs para más detalles
+### Scrapear e importar todo automáticamente
 
-### Productos con variantes no se importan correctamente
-- Verifica que `variants_json` tenga el formato correcto
-- El importador automáticamente cae a modo simple si hay error
-- Revisa que los atributos usen el formato estándar de WooCommerce (`attribute_pa_*`)
-
-### Collections vacías o productos no aparecen en categorías
-- Las Collections se pueblan automáticamente por los filtros definidos
-- Verifica que los FacetValues estén correctamente asignados al producto
-- Si usas búsqueda con índice, ejecuta `runPendingSearchIndexUpdates` después del import
-- En Admin UI: Catalog → Collections → (selecciona una) → verifica el filtro `facet-value-filter`
-
-## 🎁 Ejemplos
-
-### Scrapear todas las categorías
 ```bash
-# Living Room
-node scraper.js \
-  --startUrl="https://todaysfurniture305.com/product-category/living-room/" \
-  --out="living-room.xlsx"
-
-# Bedroom
-node scraper.js \
-  --startUrl="https://todaysfurniture305.com/product-category/bedroom/" \
-  --out="bedroom.xlsx"
-
-# Dining
-node scraper.js \
-  --startUrl="https://todaysfurniture305.com/product-category/dining/" \
-  --out="dining.xlsx"
+bash full-pipeline.sh
 ```
 
-### Importar todo a Vendure
+Esto scrapeará todas las categorías configuradas en el script e importará todo a Vendure.
+
+### Importar múltiples archivos CSV
+
 ```bash
-for file in living-room.xlsx bedroom.xlsx dining.xlsx; do
-  export XLSX_PATH="$(pwd)/$file"
-  node import-products.js
-done
+bash import-all.sh
 ```
 
-## 📚 Documentación
+Importa todos los archivos `.xlsx` o `.csv` del directorio actual.
 
-### Documentación Local
-- **[CATEGORIES.md](./CATEGORIES.md)** - Guía completa del sistema de categorías, Facets y Collections
-- **[CHANGELOG_CATEGORIES.md](./CHANGELOG_CATEGORIES.md)** - Resumen de cambios implementados para categorías
-- **[update-search-index.js](./update-search-index.js)** - Script opcional para actualizar el índice de búsqueda
+## 🏷️ Sistema de Categorías
 
-### Documentación Vendure
-- [Products & Variants](https://docs.vendure.io/guides/developer-guide/product-modeling/)
-- [Product Options](https://docs.vendure.io/guides/developer-guide/product-modeling/#product-options)
-- [Facets](https://docs.vendure.io/guides/developer-guide/facets/)
-- [Collections](https://docs.vendure.io/guides/developer-guide/collections/)
-- [Admin API](https://docs.vendure.io/reference/admin-api/)
-- [Asset Upload](https://docs.vendure.io/guides/developer-guide/uploading-files/)
+El importador usa el sistema de **Facets** y **FacetValues** de Vendure:
 
-## 🎨 GraphiQL
+- **Facet "category"**: Se crea automáticamente como público (visible en Shop API)
+- **FacetValues**: Cada categoría del CSV se convierte en un FacetValue
+- **Asignación**: Los FacetValues se asignan automáticamente a cada producto
 
-Probar queries en: `http://localhost:3000/graphiql/admin`
+### Ejemplo
+
+CSV:
+```
+name,facets
+Modern Sofa,"category:Living Room|category:Sofas"
+```
+
+Resultado en Vendure:
+- Se crea el Facet "category" (si no existe)
+- Se crean FacetValues: "Living Room" (código: living-room), "Sofas" (código: sofas)
+- El producto "Modern Sofa" tendrá ambos FacetValues asignados
+
+## ⚙️ Configuración Inicial de Vendure
+
+**IMPORTANTE**: Antes de importar productos, tu servidor Vendure necesita tener configurada una Tax Zone. Si no la tienes, los productos se crearán pero las variantes fallarán con el error:
+
+```
+The active tax zone could not be determined. Ensure a default tax zone is set for the current channel.
+```
+
+### Configurar Tax Zone (Automático - Recomendado)
+
+Ejecuta el script de setup incluido:
+
+```bash
+node setup-vendure.js
+```
+
+Este script verificará tu configuración actual y creará automáticamente:
+- Country: United States
+- Zone: Default Zone
+- Tax Category: Standard
+- Tax Rate: 20%
+
+### Configurar Tax Zone (Manual desde Admin UI)
+
+1. Ve a **Settings** → **Zones**
+2. Crea una zona (ej: "Default Zone") y agrégale al menos un país
+3. Ve a **Settings** → **Tax Rates**
+4. Crea una tasa de impuestos (ej: "Standard Tax", 20%) y asóciala a la zona
+5. Ve a **Settings** → **Channels**
+6. Edita el canal "default" y asegúrate que tenga una zona por defecto
+
+### Configurar Tax Zone (vía GraphQL)
 
 ```graphql
-query GetProducts {
-  products(options: { take: 10 }) {
-    items {
-      id
-      name
-      slug
-      variants {
-        id
-        sku
-        price
-        options {
-          name
-          group { name }
-        }
-      }
-    }
+# 1. Crear país
+mutation {
+  createCountry(input: {
+    code: "US"
+    translations: [{ languageCode: en, name: "United States" }]
+    enabled: true
+  }) {
+    id
+  }
+}
+
+# 2. Crear zona con el país
+mutation {
+  createZone(input: {
+    name: "Default Zone"
+    memberIds: ["<COUNTRY_ID>"]
+  }) {
+    id
+  }
+}
+
+# 3. Crear categoría de impuestos
+mutation {
+  createTaxCategory(input: {
+    name: "Standard"
+  }) {
+    id
+  }
+}
+
+# 4. Crear tasa de impuestos
+mutation {
+  createTaxRate(input: {
+    name: "Standard Tax"
+    enabled: true
+    value: 20
+    categoryId: "<TAX_CATEGORY_ID>"
+    zoneId: "<ZONE_ID>"
+  }) {
+    id
   }
 }
 ```
 
-## 📝 Notas
+Una vez configurada la zona, vuelve a ejecutar el importador y funcionará perfectamente.
 
-- **Precios ocultos**: Si la tienda WooCommerce requiere login para ver precios, el scraper marca `price_hidden_requires_login: TRUE` y deja `price` vacío. El importador crea el producto con precio 0 y podés actualizarlo después.
+## 🔧 Troubleshooting
 
-- **Imágenes**: El importador sube máximo 5 imágenes por producto para evitar timeouts. Si necesitás más, ajustá `restImages.slice(1, 5)` en `import-products.js`.
+### "The active tax zone could not be determined"
+**Este es el error más común.** Significa que Vendure no tiene configurada una Tax Zone. Sigue las instrucciones de [Configuración Inicial](#️-configuración-inicial-de-vendure) arriba.
 
-- **Variantes**: El sistema automáticamente detecta si un producto es "variable" y crea las OptionGroups/Options necesarias. Si el producto ya existe en Vendure, reutiliza los grupos existentes. Los atributos de WooCommerce (`attribute_pa_size`) se normalizan automáticamente a claves simples (`size`).
+### "Login failed"
+- Verifica que tu servidor Vendure esté corriendo en `http://localhost:3000`
+- Revisa las credenciales en el `.env`
+- Prueba hacer login manualmente en `http://localhost:3000/admin`
 
-- **Stock**: Por defecto usa `DEFAULT_STOCK_ON_HAND`. Si el scraper captura `stock_quantity` de las variantes, usa ese valor.
+### "Failed to download image"
+- Las imágenes inaccesibles se saltan automáticamente
+- El producto se crea de todas formas sin esa imagen
 
-- **Categorías**: Las categorías del Excel se convierten en FacetValues del Facet "category" (público) y se crean Collections automáticas con filtros dinámicos. Las Collections se pueblan automáticamente según las reglas definidas, por lo que no hace falta asignar productos manualmente.
+### "No products found in CSV"
+- Verifica que el archivo CSV existe y tiene productos
+- Usa `export CSV_PATH="$(pwd)/archivo.csv"` para especificar la ruta
 
-- **Collections jerárquicas**: Si necesitás jerarquías (ej: "Living Room" → "Sofas"), modificá `ensureCategoryCollection` para detectar patrones en los nombres y pasar `parentId` + `inheritFilters: true`.
+### Productos no aparecen en Admin UI
+- Verifica que el import finalizó exitosamente (mensaje "Import completed!")
+- Refresca la página del Admin UI (`http://localhost:3000/admin`)
+- Revisa los logs del servidor Vendure por posibles errores
 
-## 🛠️ Dependencias
+### "SqliteError: database is locked"
+- Esto puede ocurrir si hay muchas operaciones simultáneas
+- El importador tiene un delay de 200ms entre productos, pero puedes aumentarlo si persiste
+- Generalmente es temporal y el producto se importará bien en el siguiente intento
+
+## 📚 Variables de Entorno
+
+Todas las variables tienen valores por defecto, pero puedes sobreescribirlas:
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `ADMIN_API` | `http://localhost:3000/admin-api` | URL del Admin API |
+| `ADMIN_USER` | `superadmin` | Usuario admin |
+| `ADMIN_PASS` | `superadmin` | Password admin |
+| `CSV_PATH` | `living-room.csv` | Ruta al archivo CSV |
+| `DEFAULT_STOCK_ON_HAND` | `100` | Stock por defecto |
+| `DEFAULT_LANGUAGE` | `en` | Idioma por defecto |
+
+## 🎁 Ejemplos Completos
+
+### Ejemplo 1: Scrapear Living Room e importar
 
 ```bash
-# Scraper
-npm install puppeteer exceljs minimist
+# 1. Scrapear
+node scraper.js \
+  --startUrl="https://todaysfurniture305.com/product-category/living-room/" \
+  --out="living-room.csv"
 
-# Importador
-npm install xlsx graphql-request cross-fetch slugify form-data
+# 2. Importar
+export CSV_PATH="$(pwd)/living-room.csv"
+node import-products.js
 ```
 
-## ✨ Hecho
+### Ejemplo 2: Scrapear múltiples categorías
 
-Tu pipeline está completo y listo para:
-- ✅ Scrapear cualquier tienda WooCommerce
-- ✅ Manejar productos simples y variables
-- ✅ Importar a Vendure con toda la metadata
-- ✅ Crear variantes con opciones correctamente vinculadas
-- ✅ Normalizar atributos de WooCommerce automáticamente
-- ✅ Subir imágenes y assets
-- ✅ Crear taxonomía completa (Facets + Collections)
-- ✅ Asignar categorías a productos con FacetValues
-- ✅ Collections auto-pobladas con filtros dinámicos
-- ✅ Soporte para jerarquías de categorías
-- ✅ Manejar errores y reintentos
+```bash
+# Bedroom
+node scraper.js \
+  --startUrl="https://todaysfurniture305.com/product-category/bedroom/" \
+  --out="bedroom.csv"
 
-¡A scrapear! 🚀
+# Dining
+node scraper.js \
+  --startUrl="https://todaysfurniture305.com/product-category/dining/" \
+  --out="dining.csv"
 
+# Office
+node scraper.js \
+  --startUrl="https://todaysfurniture305.com/product-category/office/" \
+  --out="office.csv"
+
+# Importar todos
+bash import-all.sh
+```
+
+### Ejemplo 3: Pipeline completo automatizado
+
+```bash
+# Scrapea 7 categorías e importa todo
+bash full-pipeline.sh
+```
+
+## 🛠️ Instalación
+
+```bash
+# Clonar el repositorio
+git clone <tu-repo>
+cd products-scrapper
+
+# Instalar dependencias
+npm install
+
+# Crear archivo .env
+cp .env.example .env
+# Editar .env con tus credenciales
+
+# Verificar que Vendure esté corriendo
+curl http://localhost:3000/admin-api
+
+# Listo para usar!
+```
+
+## 📦 Dependencias
+
+```json
+{
+  "dependencies": {
+    "puppeteer": "Para scraping con navegador headless",
+    "csv-parser": "Para leer archivos CSV",
+    "graphql-request": "Cliente GraphQL para Vendure API",
+    "cross-fetch": "Para HTTP requests y descargar imágenes",
+    "form-data": "Para subir imágenes multipart",
+    "slugify": "Para generar slugs",
+    "minimist": "Para argumentos CLI"
+  }
+}
+```
+
+## 🎨 Ver tus productos
+
+Una vez importados, accede a:
+
+- **Admin UI**: `http://localhost:3000/admin`
+- **GraphiQL Admin**: `http://localhost:3000/graphiql/admin`
+- **Shop API**: `http://localhost:3000/shop-api`
+
+## 📚 Documentación Adicional
+
+- **[CATEGORIES.md](./CATEGORIES.md)** - Guía detallada del sistema de categorías
+- **[Vendure Docs](https://docs.vendure.io/)** - Documentación oficial de Vendure
+
+## ✨ Features
+
+✅ Scraping completo de WooCommerce  
+✅ Exportación a CSV compatible con Vendure  
+✅ Importación via GraphQL API  
+✅ Soporte de categorías con Facets  
+✅ Subida automática de imágenes  
+✅ Manejo de errores y reintentos  
+✅ Scripts de automatización incluidos  
+✅ Sin necesidad de base de datos local  
+✅ Se conecta a tu servidor Vendure existente  
+
+¡A importar productos! 🚀

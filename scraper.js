@@ -1,10 +1,10 @@
-// scraper.js - WooCommerce Product Scraper for Node 18+ & Puppeteer ^21
-// Usage: node scraper.js --startUrl="https://example.com/category/" [options]
-// Dependencies: puppeteer exceljs minimist
+// scraper-vendure.js - WooCommerce to Vendure CSV Scraper
+// Usage: node scraper-vendure.js --startUrl="https://example.com/category/" [options]
+// Dependencies: puppeteer papaparse minimist
 
 import fs from 'fs';
 import puppeteer from 'puppeteer';
-import ExcelJS from 'exceljs';
+import Papa from 'papaparse';
 import minimist from 'minimist';
 
 // ============================================================================
@@ -14,11 +14,11 @@ const argv = minimist(process.argv.slice(2));
 
 if (argv.help || argv.h || !argv.startUrl) {
   console.log(`
-🛒 WooCommerce Product Scraper
-================================
+🛒 WooCommerce to Vendure CSV Scraper
+======================================
 
 Usage:
-  node scraper.js --startUrl="<URL>" [options]
+  node scraper-vendure.js --startUrl="<URL>" [options]
 
 Required:
   --startUrl=<URL>           Category URL to scrape
@@ -26,14 +26,13 @@ Required:
 Options:
   --maxPages=<N>             Maximum pages to scrape (default: all)
   --delayMs=<N>              Base delay between requests in ms (default: 400)
-  --out=<file>               Output XLSX file (default: scrape.xlsx)
-  --jsonOut=<file>           Optional JSON output for debugging
-  --headless=<true|false>    Run in headless mode (default: true)
+  --out=<file>               Output CSV file (default: vendure-import.csv)
+  --headless=<true|false>    Run in headless mode (default: false)
   --concurrency=<N>          Product scraping concurrency (default: 2)
   --help, -h                 Show this help
 
 Example:
-  node scraper.js --startUrl="https://todaysfurniture305.com/product-category/living-room/" --out=living-room.xlsx
+  node scraper-vendure.js --startUrl="https://todaysfurniture305.com/product-category/living-room/" --out=living-room.csv
 `);
   process.exit(argv.help || argv.h ? 0 : 1);
 }
@@ -42,9 +41,8 @@ const CONFIG = {
   startUrl: argv.startUrl,
   maxPages: parseInt(argv.maxPages) || Infinity,
   delayMs: parseInt(argv.delayMs) || 400,
-  outFile: argv.out || 'scrape.xlsx',
-  jsonOut: argv.jsonOut || null,
-  headless: argv.headless === 'false' ? false : 'new',
+  outFile: argv.out || 'vendure-import.csv',
+  headless: argv.headless === 'true' ? 'new' : false,
   concurrency: parseInt(argv.concurrency) || 2,
   timeout: 30000,
   retries: 2
@@ -77,45 +75,77 @@ function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean)));
 }
 
+// Extract current price from WooCommerce format
+function extractPrice(priceText) {
+  if (!priceText) return '';
+  
+  let text = String(priceText).replace(/[$€£¥]/g, '').trim();
+  
+  // Check for "Current price is:" pattern
+  const currentMatch = text.match(/Current price is:\s*([0-9,\.]+)/i);
+  if (currentMatch) {
+    return currentMatch[1].replace(/,/g, '');
+  }
+  
+  // Check for multiple prices (sale scenario)
+  const prices = text.match(/([0-9,\.]+)/g);
+  if (prices && prices.length > 1) {
+    return prices[prices.length - 1].replace(/,/g, '');
+  }
+  
+  if (prices && prices.length === 1) {
+    return prices[0].replace(/,/g, '');
+  }
+  
+  return '';
+}
+
+function normalizeAttributeName(attrKey) {
+  return String(attrKey)
+    .replace(/^attribute_pa_/i, '')
+    .replace(/^attribute_/i, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-');
+}
 
 // ============================================================================
 // BROWSER SETUP
 // ============================================================================
 
 async function launchBrowser() {
-  const browser = await puppeteer.launch({
-    headless: CONFIG.headless,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--disable-gpu'
-    ]
-  });
-
-  const page = await browser.newPage();
-  
-  // Anti-detection measures
-  await page.setUserAgent(
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  );
-  await page.setViewport({ width: 1366, height: 768 });
-  page.setDefaultTimeout(CONFIG.timeout);
-  page.setDefaultNavigationTimeout(CONFIG.timeout);
-
-  // Block unnecessary resources
-  await page.setRequestInterception(true);
-  page.on('request', req => {
-    const type = req.resourceType();
-    if (['font', 'media', 'stylesheet'].includes(type)) {
-      req.abort();
-    } else {
-      req.continue();
-    }
-  });
-
-  return { browser, page };
+  try {
+    const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222' });
+    console.log('✓ Connected to existing Chrome instance');
+    const page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on('request', req => {
+      const type = req.resourceType();
+      if (['font', 'media'].includes(type)) req.abort(); 
+      else req.continue();
+    });
+    return { browser, page };
+  } catch {
+    console.log('→ Launching new Chrome instance...');
+    const browser = await puppeteer.launch({
+      headless: CONFIG.headless,
+      channel: 'chrome',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        `--user-data-dir=${process.env.CHROME_DATA_DIR || './.chrome-profile'}`,
+      ],
+      defaultViewport: { width: 1366, height: 768 },
+    });
+    const page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on('request', req => {
+      const type = req.resourceType();
+      if (['font', 'media'].includes(type)) req.abort(); 
+      else req.continue();
+    });
+    return { browser, page };
+  }
 }
 
 // ============================================================================
@@ -131,7 +161,6 @@ async function collectCategoryPages(page, startUrl, maxPages) {
   const pages = [startUrl];
   
   try {
-    // Try to find pagination links
     const paginationLinks = await page.$$eval(
       'nav.woocommerce-pagination .page-numbers a.page-numbers:not(.next):not(.prev)',
       links => links.map(a => a.href).filter(Boolean)
@@ -159,7 +188,6 @@ async function collectProductLinksFromCategory(page, categoryUrl) {
     await page.goto(categoryUrl, { waitUntil: 'domcontentloaded' });
     await sleep(randomDelay());
 
-    // Scroll to load lazy content
     await page.evaluate(() => {
       window.scrollBy(0, window.innerHeight * 2);
     });
@@ -168,7 +196,6 @@ async function collectProductLinksFromCategory(page, categoryUrl) {
     const links = await page.$$eval('article.product', articles => {
       const urls = [];
       for (const article of articles) {
-        // Try multiple selectors for product link
         const link = article.querySelector('figure a, .product-title a, a[href*="/product/"]');
         if (link && link.href && link.href.includes('/product/')) {
           urls.push(link.href);
@@ -196,117 +223,83 @@ async function scrapeProduct(page, url, retryCount = 0) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: CONFIG.timeout });
     await sleep(randomDelay());
 
-    // Extract all data in one evaluate call for efficiency
     const data = await page.evaluate(() => {
       const result = {
-        title: null,
-        description_html: null,
-        description_text: null,
-        short_description_html: null,
-        short_description_text: null,
+        name: null,
+        slug: null,
+        description: null,
+        assets: [],
+        facets: [],
         categories: [],
         price: null,
-        price_hidden_requires_login: false,
-        discount_label: null,
-        dimensions_raw: null,
-        product_url: window.location.href,
-        product_id: null,
-        product_type: null,
-        slug: null,
         sku: null,
-        images: [],
-        thumbnail: null,
-        tags_extra: [],
-        countdown: null,
-        variants: null
+        variants: [],
+        product_type: null
       };
 
       // Title
       const titleEl = document.querySelector('h1.product_title, h1.product-title, h1');
-      result.title = titleEl ? titleEl.innerText.trim() : null;
+      result.name = titleEl ? titleEl.innerText.trim() : null;
 
-      // Product ID and Type from article classes
-      const article = document.querySelector('article[class*="post-"], #product-24175, [class*="product-type-"]');
-      if (article) {
-        const classes = article.className;
-        const idMatch = classes.match(/post-(\d+)/);
-        const typeMatch = classes.match(/product-type-(\w+)/);
-        result.product_id = idMatch ? idMatch[1] : null;
-        result.product_type = typeMatch ? typeMatch[1] : null;
-      }
-
-      // ========== SLUG desde URL ==========
+      // Slug from URL
       const urlObj = new URL(window.location.href);
       const pathParts = urlObj.pathname.split('/').filter(Boolean);
       const productIdx = pathParts.indexOf('product');
-      const slug = productIdx >= 0 ? pathParts[productIdx + 1] : pathParts[pathParts.length - 1];
-      result.slug = slug || null;
+      result.slug = productIdx >= 0 ? pathParts[productIdx + 1] : pathParts[pathParts.length - 1];
 
-      // ========== SKU visible ==========
+      // SKU
       const skuEl = document.querySelector('.sku, [itemprop="sku"], .product_meta .sku_wrapper .sku');
       result.sku = skuEl ? skuEl.textContent.trim() : null;
 
-      // ========== Short Description (Woo estándar) ==========
+      // Product Type
+      const article = document.querySelector('article[class*="product-type-"]');
+      if (article) {
+        const typeMatch = article.className.match(/product-type-(\w+)/);
+        result.product_type = typeMatch ? typeMatch[1] : 'simple';
+      }
+
+      // Description
+      const descTab = document.querySelector('#tab-description, .woocommerce-Tabs-panel--description');
+      if (descTab) {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = descTab.innerHTML;
+        result.description = tempDiv.textContent.trim().replace(/\s+/g, ' ');
+      }
+
+      // Short description
       const shortDescEl = document.querySelector('.woocommerce-product-details__short-description');
       if (shortDescEl) {
-        result.short_description_html = shortDescEl.innerHTML.trim();
-        result.short_description_text = shortDescEl.innerText.trim();
+        const shortText = shortDescEl.innerText.trim().replace(/\s+/g, ' ');
+        result.description = result.description 
+          ? `${result.description} ${shortText}` 
+          : shortText;
       }
 
-      // Check for hidden price (login required)
-      const hiddenPriceBlock = document.querySelector('.ced_hpul_single_summary_wrapper, .ced_hpul_login_link');
-      const bodyText = document.body.innerText.toLowerCase();
-      if (hiddenPriceBlock || (bodyText.includes('please') && bodyText.includes('register') && bodyText.includes('price'))) {
-        result.price_hidden_requires_login = true;
-        result.price = null;
-      } else {
-        // Try to get visible price
-        const priceEl = document.querySelector('.summary .price, p.price, .woocommerce-Price-amount');
-        result.price = priceEl ? priceEl.innerText.trim() : null;
-      }
-
-      // Discount label
-      const discountEl = document.querySelector('.product-label.discount, .onsale');
-      result.discount_label = discountEl ? discountEl.innerText.trim() : null;
+      // Price
+      const priceEl = document.querySelector('.summary .price, p.price');
+      result.price = priceEl ? priceEl.innerText.trim() : null;
 
       // Categories
-      const categoryLinks = document.querySelectorAll('.product_meta .posted_in a, .breadcrumb a[rel="tag"]');
-      result.categories = Array.from(categoryLinks).map(a => a.innerText.trim()).filter(Boolean);
-
-      // Tags (additional)
-      const tagLinks = document.querySelectorAll('.tagged_as a, .product-tags a');
-      result.tags_extra = Array.from(tagLinks).map(a => a.innerText.trim()).filter(Boolean);
-
-      // Description (from tab)
-      const descTab = document.querySelector('#tab-description, .woocommerce-Tabs-panel--description, #tab-description-content');
-      if (descTab) {
-        result.description_html = descTab.innerHTML.trim();
-        result.description_text = descTab.innerText.trim();
-      }
-
-      // Extract dimensions from description
-      if (result.description_text) {
-        const dimMatch = result.description_text.match(/(\d+["']?\s*[xX×]\s*\d+["']?\s*[xX×]\s*\d+["']?)/);
-        result.dimensions_raw = dimMatch ? dimMatch[1].trim() : null;
-      }
+      const categoryLinks = document.querySelectorAll('.product_meta .posted_in a');
+      result.categories = Array.from(categoryLinks)
+        .map(a => a.innerText.trim())
+        .filter(Boolean);
 
       // Images from gallery
       const galleryImages = document.querySelectorAll('.woocommerce-product-gallery__image');
       const seen = new Set();
       
       for (const slide of galleryImages) {
-        // Priority 1: Link href (usually high-res)
         const link = slide.querySelector('a[href]');
         if (link && link.href && !link.href.includes('javascript:')) {
           const abs = new URL(link.href, window.location.href).href;
           if (!seen.has(abs)) {
             seen.add(abs);
-            result.images.push(abs);
+            result.assets.push(abs);
           }
           continue;
         }
 
-        // Priority 2: img data-large_image
         const img = slide.querySelector('img');
         if (img) {
           const largeImage = img.getAttribute('data-large_image');
@@ -314,23 +307,11 @@ async function scrapeProduct(page, url, retryCount = 0) {
             const abs = new URL(largeImage, window.location.href).href;
             if (!seen.has(abs)) {
               seen.add(abs);
-              result.images.push(abs);
+              result.assets.push(abs);
             }
             continue;
           }
 
-          // Priority 3: data-lazy-src or data-src
-          const lazySrc = img.getAttribute('data-lazy-src') || img.getAttribute('data-src');
-          if (lazySrc) {
-            const abs = new URL(lazySrc, window.location.href).href;
-            if (!seen.has(abs)) {
-              seen.add(abs);
-              result.images.push(abs);
-            }
-            continue;
-          }
-
-          // Priority 4: srcset (pick largest)
           const srcset = img.getAttribute('srcset');
           if (srcset) {
             const candidates = srcset.split(',').map(s => {
@@ -342,63 +323,42 @@ async function scrapeProduct(page, url, retryCount = 0) {
               const abs = new URL(candidates[0].url, window.location.href).href;
               if (!seen.has(abs)) {
                 seen.add(abs);
-                result.images.push(abs);
+                result.assets.push(abs);
               }
               continue;
             }
           }
 
-          // Priority 5: regular src
           if (img.src && !img.src.includes('data:')) {
             const abs = new URL(img.src, window.location.href).href;
             if (!seen.has(abs)) {
               seen.add(abs);
-              result.images.push(abs);
+              result.assets.push(abs);
             }
           }
         }
       }
 
-      // Thumbnail = first image
-      result.thumbnail = result.images[0] || null;
-
-      // Countdown data
-      const countdownEl = document.querySelector('.product-countdown[data-y], [data-countdown]');
-      if (countdownEl) {
-        result.countdown = {
-          year: countdownEl.getAttribute('data-y') || null,
-          month: countdownEl.getAttribute('data-m') || null,
-          day: countdownEl.getAttribute('data-d') || null,
-          hour: countdownEl.getAttribute('data-h') || null,
-          minute: countdownEl.getAttribute('data-i') || null,
-          second: countdownEl.getAttribute('data-s') || null
-        };
-      }
-
-      // ========== Variantes (productos variables de WooCommerce) ==========
+      // Variants
       const varForm = document.querySelector('form.variations_form');
       if (varForm && varForm.getAttribute('data-product_variations')) {
         try {
           const rawVariants = JSON.parse(varForm.getAttribute('data-product_variations'));
           result.variants = rawVariants.map(v => ({
-            variation_id: v.variation_id,
             sku: v.sku || null,
-            price_html: v.price_html || null,
-            display_price: v.display_price || null,
-            attributes: v.attributes || {}, // ej: { attribute_pa_color: "black" }
-            image: v.image?.url || v.image?.src || null,
-            is_in_stock: v.is_in_stock ?? true,
-            stock_quantity: v.max_qty || null
+            price: v.display_price || null,
+            attributes: v.attributes || {},
+            image: v.image?.url || v.image?.src || null
           }));
         } catch (e) {
-          // Error parseando variantes, dejar null
+          // Error parsing variants
         }
       }
 
       return result;
     });
 
-    console.log(`   ✅ ${data.title || 'Untitled'}`);
+    console.log(`   ✅ ${data.name || 'Untitled'}`);
     return data;
 
   } catch (e) {
@@ -449,65 +409,152 @@ async function scrapeProductsConcurrently(browser, productUrls) {
 }
 
 // ============================================================================
-// EXCEL EXPORT
+// VENDURE CSV EXPORT
 // ============================================================================
 
-async function toXlsx(rows, outPath) {
-  console.log(`💾 Writing ${rows.length} products to ${outPath}...`);
-  
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('products');
+function productToVendureRows(product) {
+  if (!product.name) return [];
 
-  ws.columns = [
-    { header: 'title', key: 'title', width: 40 },
-    { header: 'slug', key: 'slug', width: 30 },
-    { header: 'sku', key: 'sku', width: 20 },
-    { header: 'description_text', key: 'description_text', width: 60 },
-    { header: 'description_html', key: 'description_html', width: 60 },
-    { header: 'short_description_text', key: 'short_description_text', width: 50 },
-    { header: 'short_description_html', key: 'short_description_html', width: 60 },
-    { header: 'categories', key: 'categories', width: 40 },
-    { header: 'tags_extra', key: 'tags_extra', width: 30 },
-    { header: 'price', key: 'price', width: 12 },
-    { header: 'price_hidden_requires_login', key: 'price_hidden_requires_login', width: 10 },
-    { header: 'discount_label', key: 'discount_label', width: 10 },
-    { header: 'dimensions_raw', key: 'dimensions_raw', width: 20 },
-    { header: 'product_type', key: 'product_type', width: 20 },
-    { header: 'product_id', key: 'product_id', width: 12 },
-    { header: 'product_url', key: 'product_url', width: 60 },
-    { header: 'thumbnail', key: 'thumbnail', width: 60 },
-    { header: 'images', key: 'images', width: 80 },
-    { header: 'variants_json', key: 'variants_json', width: 80 },
-    { header: 'countdown', key: 'countdown', width: 40 }
-  ];
+  const rows = [];
+  const categories = (product.categories || [])
+    .map(cat => `category:${cat}`)
+    .join('|');
 
-  for (const r of rows) {
-    ws.addRow({
-      title: r.title || '',
-      slug: r.slug || '',
-      sku: r.sku || '',
-      description_text: r.description_text || '',
-      description_html: r.description_html || '',
-      short_description_text: r.short_description_text || '',
-      short_description_html: r.short_description_html || '',
-      categories: (r.categories || []).join('|'),
-      tags_extra: (r.tags_extra || []).join('|'),
-      price: r.price || '',
-      price_hidden_requires_login: r.price_hidden_requires_login ? 'TRUE' : 'FALSE',
-      discount_label: r.discount_label || '',
-      dimensions_raw: r.dimensions_raw || '',
-      product_type: r.product_type || '',
-      product_id: r.product_id || '',
-      product_url: r.product_url || '',
-      thumbnail: r.thumbnail || '',
-      images: (r.images || []).join('|'),
-      variants_json: r.variants ? JSON.stringify(r.variants) : '',
-      countdown: r.countdown ? JSON.stringify(r.countdown) : ''
+  const assets = (product.assets || []).join('|');
+  const description = (product.description || '').replace(/"/g, '""'); // Escape quotes
+
+  // Check if product has variants
+  if (product.variants && product.variants.length > 1) {
+    // Variable product
+    const optionGroupsSet = new Set();
+    
+    // Collect all unique attributes
+    product.variants.forEach(variant => {
+      Object.keys(variant.attributes || {}).forEach(attrKey => {
+        optionGroupsSet.add(normalizeAttributeName(attrKey));
+      });
+    });
+    
+    const optionGroups = Array.from(optionGroupsSet).join('|');
+
+    // First row: product data + first variant
+    const firstVariant = product.variants[0];
+    const optionValues = Array.from(optionGroupsSet).map(group => {
+      const attrKey = Object.keys(firstVariant.attributes || {})
+        .find(k => normalizeAttributeName(k) === group);
+      return attrKey ? firstVariant.attributes[attrKey] : '';
+    }).join('|');
+
+    const price = extractPrice(firstVariant.price || product.price);
+
+    rows.push({
+      name: product.name,
+      slug: product.slug || '',
+      description: description,
+      assets: assets,
+      facets: categories,
+      optionGroups: optionGroups,
+      optionValues: optionValues,
+      sku: firstVariant.sku || product.sku || '',
+      price: price,
+      taxCategory: 'standard',
+      stockOnHand: '100',
+      trackInventory: 'false',
+      variantAssets: firstVariant.image || '',
+      variantFacets: ''
+    });
+
+    // Subsequent rows: additional variants (empty product fields)
+    for (let i = 1; i < product.variants.length; i++) {
+      const variant = product.variants[i];
+      const optionValues = Array.from(optionGroupsSet).map(group => {
+        const attrKey = Object.keys(variant.attributes || {})
+          .find(k => normalizeAttributeName(k) === group);
+        return attrKey ? variant.attributes[attrKey] : '';
+      }).join('|');
+
+      const variantPrice = extractPrice(variant.price || product.price);
+
+      rows.push({
+        name: '',
+        slug: '',
+        description: '',
+        assets: '',
+        facets: '',
+        optionGroups: '',
+        optionValues: optionValues,
+        sku: variant.sku || `${product.sku}-${i}`,
+        price: variantPrice,
+        taxCategory: 'standard',
+        stockOnHand: '100',
+        trackInventory: 'false',
+        variantAssets: variant.image || '',
+        variantFacets: ''
+      });
+    }
+  } else {
+    // Simple product (single variant)
+    const price = extractPrice(product.price);
+
+    rows.push({
+      name: product.name,
+      slug: product.slug || '',
+      description: description,
+      assets: assets,
+      facets: categories,
+      optionGroups: '',
+      optionValues: '',
+      sku: product.sku || '',
+      price: price,
+      taxCategory: 'standard',
+      stockOnHand: '100',
+      trackInventory: 'false',
+      variantAssets: '',
+      variantFacets: ''
     });
   }
 
-  await wb.xlsx.writeFile(outPath);
-  console.log(`   ✅ Saved successfully`);
+  return rows;
+}
+
+function toVendureCSV(products, outPath) {
+  console.log(`💾 Writing ${products.length} products to Vendure CSV: ${outPath}...`);
+  
+  const allRows = [];
+  
+  for (const product of products) {
+    const rows = productToVendureRows(product);
+    allRows.push(...rows);
+  }
+
+  // Use papaparse to generate proper CSV
+  const csv = Papa.unparse(allRows, {
+    quotes: true, // Quote all fields
+    quoteChar: '"',
+    escapeChar: '"',
+    delimiter: ',',
+    header: true,
+    newline: '\n',
+    columns: [
+      'name',
+      'slug',
+      'description',
+      'assets',
+      'facets',
+      'optionGroups',
+      'optionValues',
+      'sku',
+      'price',
+      'taxCategory',
+      'stockOnHand',
+      'trackInventory',
+      'variantAssets',
+      'variantFacets'
+    ]
+  });
+
+  fs.writeFileSync(outPath, csv, 'utf-8');
+  console.log(`   ✅ Saved ${allRows.length} rows successfully`);
 }
 
 // ============================================================================
@@ -519,7 +566,6 @@ async function main() {
   let browser;
 
   try {
-    // Launch browser
     const setup = await launchBrowser();
     browser = setup.browser;
     const page = setup.page;
@@ -527,7 +573,7 @@ async function main() {
     // Step 1: Collect all category pages
     const categoryPages = await collectCategoryPages(page, CONFIG.startUrl, CONFIG.maxPages);
     
-    // Step 2: Collect all product links from all category pages
+    // Step 2: Collect all product links
     let allProductUrls = [];
     for (const catPage of categoryPages) {
       const links = await collectProductLinksFromCategory(page, catPage);
@@ -549,19 +595,15 @@ async function main() {
     
     console.log(`\n✅ Successfully scraped ${results.length} products\n`);
 
-    // Step 4: Export to XLSX
+    // Step 4: Export to Vendure CSV
     if (results.length > 0) {
-      await toXlsx(results, CONFIG.outFile);
-      
-      // Optional JSON export
-      if (CONFIG.jsonOut) {
-        fs.writeFileSync(CONFIG.jsonOut, JSON.stringify(results, null, 2));
-        console.log(`💾 JSON saved to ${CONFIG.jsonOut}`);
-      }
+      toVendureCSV(results, CONFIG.outFile);
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`\n🎉 Done in ${elapsed}s`);
+    console.log(`\n📁 Import file created: ${CONFIG.outFile}`);
+    console.log(`   Use this file with Vendure's populate() function`);
 
   } catch (e) {
     console.error('💥 Fatal error:', e);
