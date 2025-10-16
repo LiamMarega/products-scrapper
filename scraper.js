@@ -32,7 +32,7 @@ Options:
   --help, -h                 Show this help
 
 Example:
-  node scraper-vendure.js --startUrl="https://todaysfurniture305.com/product-category/living-room/" --out=living-room.csv
+  node scraper.js --startUrl="https://todaysfurniture305.com/product-category/living-room/" --out=living-room.csv
 `);
   process.exit(argv.help || argv.h ? 0 : 1);
 }

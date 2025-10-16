@@ -120,10 +120,11 @@ const CREATE_ASSETS = `
 `;
 
 const UPDATE_PRODUCT_ASSETS = `
-  mutation UpdateProductAssets($productId: ID!, $assetIds: [ID!]!) {
-    updateProduct(input: { id: $productId, assetIds: $assetIds }) {
+  mutation UpdateProductAssets($productId: ID!, $assetIds: [ID!]!, $featuredAssetId: ID) {
+    updateProduct(input: { id: $productId, assetIds: $assetIds, featuredAssetId: $featuredAssetId }) {
       id
       assets { id name }
+      featuredAsset { id name }
     }
   }
 `;
@@ -428,9 +429,10 @@ async function importProducts() {
             if (assetIds.length > 0) {
               await client.request(UPDATE_PRODUCT_ASSETS, {
                 productId: productId,
-                assetIds: assetIds
+                assetIds: assetIds,
+                featuredAssetId: assetIds[0] // Primera imagen como destacada
               });
-              console.log(`✅ Uploaded ${assetIds.length}/${imageUrls.length} images`);
+              console.log(`✅ Uploaded ${assetIds.length}/${imageUrls.length} images (featured: first image)`);
             }
           }
         }
