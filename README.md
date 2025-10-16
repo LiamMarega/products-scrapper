@@ -25,13 +25,17 @@ DEFAULT_LANGUAGE=en
 
 ### 3. Setup de Vendure (Primera vez)
 
-Si es la primera vez que usas el importador, necesitas configurar la Tax Zone:
+Si es la primera vez que usas el importador, necesitas configurar la Tax Zone y el Canal:
 
 ```bash
+# Paso 1: Configurar Tax Zone, países y tasas de impuestos
 node setup-vendure.js
+
+# Paso 2: Asignar la Tax Zone al canal por defecto
+node fix-channel.js
 ```
 
-Este paso solo se hace una vez. El script configurará automáticamente todo lo necesario.
+Estos pasos solo se hacen **una vez**. Los scripts configurarán automáticamente todo lo necesario.
 
 ### 4. Scrapear productos
 
@@ -72,7 +76,8 @@ Accede al Admin UI: `http://localhost:3000/admin`
 products-scrapper/
 ├── scraper.js           # Scraper de WooCommerce → CSV
 ├── import-products.js   # Importador CSV → Vendure (GraphQL API)
-├── setup-vendure.js     # Script de configuración inicial (Tax Zone)
+├── setup-vendure.js     # Setup inicial: Tax Zone, países, impuestos
+├── fix-channel.js       # Asignar Tax Zone al canal por defecto
 ├── package.json         # Dependencias
 ├── .env                 # Credenciales (no versionado, crealo tú)
 ├── .gitignore          
@@ -160,17 +165,22 @@ The active tax zone could not be determined. Ensure a default tax zone is set fo
 
 ### Configurar Tax Zone (Automático - Recomendado)
 
-Ejecuta el script de setup incluido:
+Ejecuta los scripts de setup incluidos:
 
 ```bash
+# 1. Crear Tax Zone, países y tasas
 node setup-vendure.js
+
+# 2. Asignar Tax Zone al canal
+node fix-channel.js
 ```
 
-Este script verificará tu configuración actual y creará automáticamente:
+Estos scripts verificarán tu configuración actual y crearán/asignarán automáticamente:
 - Country: United States
 - Zone: Default Zone
 - Tax Category: Standard
 - Tax Rate: 20%
+- Asignación de zona al canal por defecto
 
 ### Configurar Tax Zone (Manual desde Admin UI)
 
@@ -315,24 +325,34 @@ bash import-all.sh
 bash full-pipeline.sh
 ```
 
-## 🛠️ Instalación
+## 🛠️ Instalación Completa
 
 ```bash
-# Clonar el repositorio
-git clone <tu-repo>
-cd products-scrapper
-
-# Instalar dependencias
+# 1. Instalar dependencias
 npm install
 
-# Crear archivo .env
-cp .env.example .env
-# Editar .env con tus credenciales
+# 2. Crear archivo .env con tus credenciales de Vendure
+cat > .env << EOF
+ADMIN_API=http://localhost:3000/admin-api
+ADMIN_USER=superadmin
+ADMIN_PASS=superadmin
+DEFAULT_STOCK_ON_HAND=100
+DEFAULT_LANGUAGE=en
+EOF
 
-# Verificar que Vendure esté corriendo
+# 3. Verificar que Vendure esté corriendo
 curl http://localhost:3000/admin-api
 
-# Listo para usar!
+# 4. Configurar Tax Zone (SOLO LA PRIMERA VEZ)
+node setup-vendure.js
+node fix-channel.js
+
+# 5. ¡Listo para usar!
+# Scrapear productos
+node scraper.js --startUrl="https://todaysfurniture305.com/product-category/living-room/" --out="living-room.csv"
+
+# Importar a Vendure
+node import-products.js
 ```
 
 ## 📦 Dependencias
