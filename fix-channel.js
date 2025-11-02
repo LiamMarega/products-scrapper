@@ -1,6 +1,9 @@
 // fix-channel.js - Asignar Tax Zone al Channel por defecto
 import { GraphQLClient } from 'graphql-request';
 import fetch from 'cross-fetch';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const ADMIN_API = process.env.ADMIN_API || 'http://localhost:3000/admin-api';
 const ADMIN_USER = process.env.ADMIN_USER || 'superadmin';

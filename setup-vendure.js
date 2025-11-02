@@ -2,11 +2,22 @@
 // Usage: node setup-vendure.js
 
 import { GraphQLClient } from 'graphql-request';
+import dotenv from 'dotenv';
 import fetch from 'cross-fetch';
+
+dotenv.config();
+
 
 const ADMIN_API = process.env.ADMIN_API || 'http://localhost:3000/admin-api';
 const ADMIN_USER = process.env.ADMIN_USER || 'superadmin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'superadmin';
+
+// Verificación de variables de entorno
+console.log('🔍 Verificando variables de entorno:');
+console.log('   ADMIN_API:', process.env.ADMIN_API ? '✅ Configurado' : '❌ No configurado');
+console.log('   ADMIN_USER:', process.env.ADMIN_USER ? '✅ Configurado' : '❌ No configurado');
+console.log('   ADMIN_PASS:', process.env.ADMIN_PASS ? '✅ Configurado' : '❌ No configurado');
+console.log();
 
 console.log('╔═══════════════════════════════════════════════════════════╗');
 console.log('║   VENDURE SETUP - Tax Zone Configuration                 ║');
