@@ -1,8 +1,19 @@
 #!/bin/bash
-# import-all.sh - Importa todos los XLSX a Vendure
-# Usage: bash import-all.sh
+# import-all.sh - Importa todos los CSV a Vendure
+# Usage: bash scripts/import-all.sh
 
 set -e  # Exit on error
+
+# Get script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+OUTPUT_DIR="$PROJECT_ROOT/output"
+
+# Ensure output directory exists
+mkdir -p "$OUTPUT_DIR"
+
+# Change to project root for relative paths
+cd "$PROJECT_ROOT"
 
 echo "📦 Vendure - Importador Automático"
 echo "===================================="
@@ -21,35 +32,35 @@ echo "   User: $ADMIN_USER"
 echo "   Stock por defecto: $DEFAULT_STOCK_ON_HAND"
 echo ""
 
-# Buscar todos los archivos XLSX
-XLSX_FILES=($(ls *.xlsx 2>/dev/null))
+# Buscar todos los archivos CSV en output/
+CSV_FILES=($(ls "$OUTPUT_DIR"/*.csv 2>/dev/null | xargs -n1 basename))
 
-if [ ${#XLSX_FILES[@]} -eq 0 ]; then
-  echo "❌ No se encontraron archivos .xlsx en el directorio actual"
-  echo "   Ejecutá primero: bash scrape-all.sh"
+if [ ${#CSV_FILES[@]} -eq 0 ]; then
+  echo "❌ No se encontraron archivos .csv en output/"
+  echo "   Ejecutá primero los scripts de scraping"
   exit 1
 fi
 
-echo "📋 Archivos a importar: ${#XLSX_FILES[@]}"
+echo "📋 Archivos a importar: ${#CSV_FILES[@]}"
 echo ""
 
 # Contador de progreso
-TOTAL=${#XLSX_FILES[@]}
+TOTAL=${#CSV_FILES[@]}
 CURRENT=0
 SUCCESS=0
 FAILED=0
 
 # Importar cada archivo
-for file in "${XLSX_FILES[@]}"; do
+for file in "${CSV_FILES[@]}"; do
   CURRENT=$((CURRENT + 1))
   
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "📥 [$CURRENT/$TOTAL] Importando: $file"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   
-  export XLSX_PATH="$(pwd)/$file"
+  export CSV_PATH="$OUTPUT_DIR/$file"
   
-  if node import-products.js; then
+  if node scripts/import-products.js; then
     SUCCESS=$((SUCCESS + 1))
     echo ""
     echo "✅ $file importado exitosamente"

@@ -15,6 +15,8 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+const OUTPUT_DIR = path.resolve(PROJECT_ROOT, 'output');
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -23,7 +25,16 @@ const __dirname = path.dirname(__filename);
 const ADMIN_API = process.env.ADMIN_API || 'http://localhost:3000/admin-api';
 const ADMIN_USER = process.env.ADMIN_USER || 'superadmin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'superadmin';
-const CSV_PATH = process.env.CSV_PATH || path.resolve(__dirname, 'living-room.csv');
+
+// Resolve CSV path - default to output/living-room.csv
+function resolveCSVPath(csvPath) {
+  if (csvPath) {
+    return path.isAbsolute(csvPath) ? csvPath : path.resolve(PROJECT_ROOT, csvPath);
+  }
+  return path.resolve(OUTPUT_DIR, 'living-room.csv');
+}
+
+const CSV_PATH = resolveCSVPath(process.env.CSV_PATH);
 const DEFAULT_STOCK = parseInt(process.env.DEFAULT_STOCK_ON_HAND) || 100;
 const DEFAULT_LANGUAGE = process.env.DEFAULT_LANGUAGE || 'en';
 

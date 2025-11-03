@@ -28,28 +28,28 @@ DEFAULT_LANGUAGE=en
 Si es la primera vez que usas el importador, necesitas configurar la Tax Zone y el Canal:
 
 ```bash
-# Paso 1: Configurar Tax Zone, países y tasas de impuestos
-node setup-vendure.js
-
-# Paso 2: Asignar la Tax Zone al canal por defecto
-node fix-channel.js
+# Configurar Tax Zone, países, tasas de impuestos y canal
+node scripts/setup-vendure.js
 ```
 
-Estos pasos solo se hacen **una vez**. Los scripts configurarán automáticamente todo lo necesario.
+Este paso solo se hace **una vez**. El script configurará automáticamente todo lo necesario (Tax Zone, países, impuestos y canal).
 
 ### 4. Scrapear productos
 
 ```bash
-node scraper.js \
+node scripts/scraper.js \
   --startUrl="https://todaysfurniture305.com/product-category/living-room/" \
   --out="living-room.csv"
 ```
 
 **Opciones principales:**
 - `--startUrl`: URL de la categoría (requerido)
-- `--out`: Archivo CSV de salida (default: `vendure-import.csv`)
+- `--out`: Archivo CSV de salida (default: `output/vendure-import.csv`)
+- `--jsonOut`: Archivo JSON de salida (opcional)
 - `--concurrency`: Páginas en paralelo (default: 2)
 - `--maxPages`: Máximo de páginas (default: todas)
+
+> **Nota:** Los archivos generados se guardan automáticamente en la carpeta `output/`
 
 ### 5. Importar a Vendure
 
@@ -57,11 +57,11 @@ node scraper.js \
 
 ```bash
 # Opción 1: Usando variable de entorno
-export CSV_PATH="$(pwd)/living-room.csv"
-node import-products.js
+export CSV_PATH="output/living-room.csv"
+node scripts/import-products.js
 
-# Opción 2: Directamente con el default (living-room.csv)
-node import-products.js
+# Opción 2: Directamente con el default (output/living-room.csv)
+node scripts/import-products.js
 ```
 
 ¡Listo! Los productos se importarán a tu servidor Vendure.
@@ -74,18 +74,19 @@ Accede al Admin UI: `http://localhost:3000/admin`
 
 ```
 products-scrapper/
-├── scraper.js           # Scraper de WooCommerce → CSV
-├── import-products.js   # Importador CSV → Vendure (GraphQL API)
-├── setup-vendure.js     # Setup inicial: Tax Zone, países, impuestos
-├── fix-channel.js       # Asignar Tax Zone al canal por defecto
-├── package.json         # Dependencias
-├── .env                 # Credenciales (no versionado, crealo tú)
+├── scripts/                    # Scripts del proyecto
+│   ├── scraper.js              # Scraper de WooCommerce → CSV
+│   ├── import-products.js      # Importador CSV → Vendure (GraphQL API)
+│   ├── setup-vendure.js        # Setup completo: Tax Zone, países, impuestos y canal
+│   ├── full-pipeline.sh        # Script para scrapear e importar todo
+│   └── import-all.sh           # Script para importar múltiples CSV
+├── output/                     # Archivos generados (CSV, JSON)
+│   ├── *.csv                   # Archivos CSV generados por el scraper
+│   └── *.json                  # Archivos JSON (opcional)
+├── package.json                # Dependencias
+├── .env                        # Credenciales (no versionado, crealo tú)
 ├── .gitignore          
-├── README.md            # Esta guía
-├── CATEGORIES.md        # Documentación detallada de categorías
-├── full-pipeline.sh     # Script para scrapear e importar todo
-├── import-all.sh        # Script para importar múltiples CSV
-└── *.csv                # Archivos generados por el scraper
+└── README.md                   # Esta guía
 ```
 
 ## 📄 Formato CSV Generado
@@ -121,7 +122,7 @@ El scraper genera un CSV con el siguiente formato compatible con Vendure:
 ### Scrapear e importar todo automáticamente
 
 ```bash
-bash full-pipeline.sh
+bash scripts/full-pipeline.sh
 ```
 
 Esto scrapeará todas las categorías configuradas en el script e importará todo a Vendure.
@@ -129,10 +130,10 @@ Esto scrapeará todas las categorías configuradas en el script e importará tod
 ### Importar múltiples archivos CSV
 
 ```bash
-bash import-all.sh
+bash scripts/import-all.sh
 ```
 
-Importa todos los archivos `.xlsx` o `.csv` del directorio actual.
+Importa todos los archivos `.csv` del directorio `output/`.
 
 ## 🏷️ Sistema de Categorías
 
@@ -168,11 +169,8 @@ The active tax zone could not be determined. Ensure a default tax zone is set fo
 Ejecuta los scripts de setup incluidos:
 
 ```bash
-# 1. Crear Tax Zone, países y tasas
-node setup-vendure.js
-
-# 2. Asignar Tax Zone al canal
-node fix-channel.js
+# Configurar Tax Zone, países, tasas y canal
+node scripts/setup-vendure.js
 ```
 
 Estos scripts verificarán tu configuración actual y crearán/asignarán automáticamente:
@@ -255,8 +253,8 @@ Una vez configurada la zona, vuelve a ejecutar el importador y funcionará perfe
 - El producto se crea de todas formas sin esa imagen
 
 ### "No products found in CSV"
-- Verifica que el archivo CSV existe y tiene productos
-- Usa `export CSV_PATH="$(pwd)/archivo.csv"` para especificar la ruta
+- Verifica que el archivo CSV existe en `output/` y tiene productos
+- Usa `export CSV_PATH="output/archivo.csv"` para especificar la ruta
 
 ### Productos no aparecen en Admin UI
 - Verifica que el import finalizó exitosamente (mensaje "Import completed!")
@@ -277,7 +275,7 @@ Todas las variables tienen valores por defecto, pero puedes sobreescribirlas:
 | `ADMIN_API` | `http://localhost:3000/admin-api` | URL del Admin API |
 | `ADMIN_USER` | `superadmin` | Usuario admin |
 | `ADMIN_PASS` | `superadmin` | Password admin |
-| `CSV_PATH` | `living-room.csv` | Ruta al archivo CSV |
+| `CSV_PATH` | `output/living-room.csv` | Ruta al archivo CSV |
 | `DEFAULT_STOCK_ON_HAND` | `100` | Stock por defecto |
 | `DEFAULT_LANGUAGE` | `en` | Idioma por defecto |
 
@@ -287,42 +285,42 @@ Todas las variables tienen valores por defecto, pero puedes sobreescribirlas:
 
 ```bash
 # 1. Scrapear
-node scraper.js \
+node scripts/scraper.js \
   --startUrl="https://todaysfurniture305.com/product-category/living-room/" \
   --out="living-room.csv"
 
 # 2. Importar
-export CSV_PATH="$(pwd)/living-room.csv"
-node import-products.js
+export CSV_PATH="output/living-room.csv"
+node scripts/import-products.js
 ```
 
 ### Ejemplo 2: Scrapear múltiples categorías
 
 ```bash
 # Bedroom
-node scraper.js \
+node scripts/scraper.js \
   --startUrl="https://todaysfurniture305.com/product-category/bedroom/" \
   --out="bedroom.csv"
 
 # Dining
-node scraper.js \
+node scripts/scraper.js \
   --startUrl="https://todaysfurniture305.com/product-category/dining/" \
   --out="dining.csv"
 
 # Office
-node scraper.js \
+node scripts/scraper.js \
   --startUrl="https://todaysfurniture305.com/product-category/office/" \
   --out="office.csv"
 
 # Importar todos
-bash import-all.sh
+bash scripts/import-all.sh
 ```
 
 ### Ejemplo 3: Pipeline completo automatizado
 
 ```bash
 # Scrapea 7 categorías e importa todo
-bash full-pipeline.sh
+bash scripts/full-pipeline.sh
 ```
 
 ## 🛠️ Instalación Completa
@@ -343,16 +341,15 @@ EOF
 # 3. Verificar que Vendure esté corriendo
 curl http://localhost:3000/admin-api
 
-# 4. Configurar Tax Zone (SOLO LA PRIMERA VEZ)
-node setup-vendure.js
-node fix-channel.js
+# 4. Configurar Tax Zone y Canal (SOLO LA PRIMERA VEZ)
+node scripts/setup-vendure.js
 
 # 5. ¡Listo para usar!
 # Scrapear productos
-node scraper.js --startUrl="https://todaysfurniture305.com/product-category/living-room/" --out="living-room.csv"
+node scripts/scraper.js --startUrl="https://todaysfurniture305.com/product-category/living-room/" --out="living-room.csv"
 
 # Importar a Vendure
-node import-products.js
+node scripts/import-products.js
 ```
 
 ## 📦 Dependencias

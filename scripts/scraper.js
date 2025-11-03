@@ -3,9 +3,16 @@
 // Dependencies: puppeteer papaparse minimist
 
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import puppeteer from 'puppeteer';
 import Papa from 'papaparse';
 import minimist from 'minimist';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+const OUTPUT_DIR = path.resolve(PROJECT_ROOT, 'output');
 
 // ============================================================================
 // CLI ARGUMENT PARSING
@@ -26,22 +33,37 @@ Required:
 Options:
   --maxPages=<N>             Maximum pages to scrape (default: all)
   --delayMs=<N>              Base delay between requests in ms (default: 400)
-  --out=<file>               Output CSV file (default: vendure-import.csv)
+  --out=<file>               Output CSV file (default: output/vendure-import.csv)
+  --jsonOut=<file>           Output JSON file (optional)
   --headless=<true|false>    Run in headless mode (default: false)
   --concurrency=<N>          Product scraping concurrency (default: 2)
   --help, -h                 Show this help
 
 Example:
-  node scraper.js --startUrl="https://todaysfurniture305.com/product-category/living-room/" --out=living-room.csv
+  node scripts/scraper.js --startUrl="https://todaysfurniture305.com/product-category/living-room/" --out=living-room.csv
 `);
   process.exit(argv.help || argv.h ? 0 : 1);
+}
+
+// Ensure output directory exists
+if (!fs.existsSync(OUTPUT_DIR)) {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+}
+
+// Resolve output file path
+function resolveOutputPath(filePath) {
+  if (!filePath) return path.resolve(OUTPUT_DIR, 'vendure-import.csv');
+  if (path.isAbsolute(filePath)) return filePath;
+  // If relative path, put it in output directory
+  return path.resolve(OUTPUT_DIR, filePath);
 }
 
 const CONFIG = {
   startUrl: argv.startUrl,
   maxPages: parseInt(argv.maxPages) || Infinity,
   delayMs: parseInt(argv.delayMs) || 400,
-  outFile: argv.out || 'vendure-import.csv',
+  outFile: resolveOutputPath(argv.out),
+  jsonOut: argv.jsonOut ? resolveOutputPath(argv.jsonOut) : null,
   headless: argv.headless === 'true' ? 'new' : false,
   concurrency: parseInt(argv.concurrency) || 2,
   timeout: 30000,
@@ -598,11 +620,21 @@ async function main() {
     // Step 4: Export to Vendure CSV
     if (results.length > 0) {
       toVendureCSV(results, CONFIG.outFile);
+      
+      // Export JSON if requested
+      if (CONFIG.jsonOut) {
+        console.log(`💾 Writing JSON to: ${CONFIG.jsonOut}...`);
+        fs.writeFileSync(CONFIG.jsonOut, JSON.stringify(results, null, 2), 'utf-8');
+        console.log(`   ✅ JSON saved successfully`);
+      }
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`\n🎉 Done in ${elapsed}s`);
     console.log(`\n📁 Import file created: ${CONFIG.outFile}`);
+    if (CONFIG.jsonOut) {
+      console.log(`📁 JSON file created: ${CONFIG.jsonOut}`);
+    }
     console.log(`   Use this file with Vendure's populate() function`);
 
   } catch (e) {

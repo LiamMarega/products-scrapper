@@ -20,7 +20,7 @@ console.log('   ADMIN_PASS:', process.env.ADMIN_PASS ? '✅ Configurado' : '❌ 
 console.log();
 
 console.log('╔═══════════════════════════════════════════════════════════╗');
-console.log('║   VENDURE SETUP - Tax Zone Configuration                 ║');
+console.log('║   VENDURE SETUP - Complete Configuration                 ║');
 console.log('╚═══════════════════════════════════════════════════════════╝\n');
 
 console.log('→ Vendure API:', ADMIN_API);
@@ -119,97 +119,162 @@ async function setup() {
 
     const taxData = await client.request(CHECK_TAX);
     
+    let zoneId;
+    let needsSetup = false;
+    
     if (taxData.taxRates.items.length > 0) {
       console.log('✅ Tax rates already configured:');
       taxData.taxRates.items.forEach(rate => {
         console.log(`   - ${rate.name}: ${rate.value}% (Zone: ${rate.zone?.name || 'None'})`);
       });
       console.log();
-      console.log('✅ Your Vendure instance is already configured!');
-      console.log('✅ You can now run: node import-products.js');
-      return;
+      // Get the zone ID from existing zones
+      zoneId = zonesData.zones.items[0]?.id;
+    } else {
+      needsSetup = true;
+      console.log('⚠️  No tax configuration found. Setting up...\n');
     }
 
-    console.log('⚠️  No tax configuration found. Setting up...\n');
+    if (needsSetup) {
+      // Create country
+      console.log('1️⃣  Creating country (United States)...');
+      const CREATE_COUNTRY = `
+        mutation {
+          createCountry(input: {
+            code: "US"
+            translations: [{ languageCode: en, name: "United States" }]
+            enabled: true
+          }) {
+            id
+            code
+            name
+          }
+        }
+      `;
 
-    // Create country
-    console.log('1️⃣  Creating country (United States)...');
-    const CREATE_COUNTRY = `
-      mutation {
-        createCountry(input: {
-          code: "US"
-          translations: [{ languageCode: en, name: "United States" }]
-          enabled: true
-        }) {
-          id
-          code
-          name
+      let countryResult = await client.request(CREATE_COUNTRY);
+      const countryId = countryResult.createCountry.id;
+      console.log(`✅ Country created (ID: ${countryId})`);
+
+      // Create zone
+      console.log('2️⃣  Creating zone (Default Zone)...');
+      const CREATE_ZONE = `
+        mutation CreateZone($memberIds: [ID!]!) {
+          createZone(input: {
+            name: "Default Zone"
+            memberIds: $memberIds
+          }) {
+            id
+            name
+          }
+        }
+      `;
+
+      const zoneResult = await client.request(CREATE_ZONE, { memberIds: [countryId] });
+      zoneId = zoneResult.createZone.id;
+      console.log(`✅ Zone created (ID: ${zoneId})`);
+
+      // Create tax category
+      console.log('3️⃣  Creating tax category (Standard)...');
+      const CREATE_TAX_CATEGORY = `
+        mutation {
+          createTaxCategory(input: {
+            name: "Standard"
+          }) {
+            id
+            name
+          }
+        }
+      `;
+
+      const taxCatResult = await client.request(CREATE_TAX_CATEGORY);
+      const taxCategoryId = taxCatResult.createTaxCategory.id;
+      console.log(`✅ Tax category created (ID: ${taxCategoryId})`);
+
+      // Create tax rate
+      console.log('4️⃣  Creating tax rate (20%)...');
+      const CREATE_TAX_RATE = `
+        mutation CreateTaxRate($categoryId: ID!, $zoneId: ID!) {
+          createTaxRate(input: {
+            name: "Standard Tax"
+            enabled: true
+            value: 20
+            categoryId: $categoryId
+            zoneId: $zoneId
+          }) {
+            id
+            name
+            value
+          }
+        }
+      `;
+
+      await client.request(CREATE_TAX_RATE, {
+        categoryId: taxCategoryId,
+        zoneId: zoneId
+      });
+      console.log('✅ Tax rate created (20%)');
+    }
+
+    // Step 5: Configure channel (assign tax zone to default channel)
+    console.log('\n5️⃣  Configuring default channel...');
+    
+    // Get all channels
+    const GET_CHANNELS = `
+      query {
+        channels {
+          items {
+            id
+            code
+            defaultTaxZone { id name }
+            defaultShippingZone { id name }
+          }
         }
       }
     `;
 
-    let countryResult = await client.request(CREATE_COUNTRY);
-    const countryId = countryResult.createCountry.id;
-    console.log(`✅ Country created (ID: ${countryId})`);
+    const channelsData = await client.request(GET_CHANNELS);
+    const defaultChannel = channelsData.channels.items.find(c => c.code === '__default_channel__') 
+                        || channelsData.channels.items[0];
 
-    // Create zone
-    console.log('2️⃣  Creating zone (Default Zone)...');
-    const CREATE_ZONE = `
-      mutation CreateZone($memberIds: [ID!]!) {
-        createZone(input: {
-          name: "Default Zone"
-          memberIds: $memberIds
-        }) {
-          id
-          name
-        }
+    if (!defaultChannel) {
+      console.warn('⚠️  No channels found, skipping channel configuration');
+    } else {
+      console.log(`📺 Found channel: ${defaultChannel.code}`);
+      
+      if (!defaultChannel.defaultTaxZone) {
+        console.log(`   Assigning tax zone to channel...`);
+        
+        const UPDATE_CHANNEL = `
+          mutation UpdateChannel($input: UpdateChannelInput!) {
+            updateChannel(input: $input) {
+              ... on Channel {
+                id
+                code
+                defaultTaxZone { id name }
+                defaultShippingZone { id name }
+              }
+            }
+          }
+        `;
+
+        const result = await client.request(UPDATE_CHANNEL, {
+          input: {
+            id: defaultChannel.id,
+            defaultTaxZoneId: zoneId,
+            defaultShippingZoneId: zoneId
+          }
+        });
+
+        console.log('✅ Channel configured successfully!');
+        console.log(`   Tax Zone: ${result.updateChannel.defaultTaxZone.name}`);
+        console.log(`   Shipping Zone: ${result.updateChannel.defaultShippingZone.name}`);
+      } else {
+        console.log('✅ Channel already has tax zone configured');
+        console.log(`   Tax Zone: ${defaultChannel.defaultTaxZone.name}`);
+        console.log(`   Shipping Zone: ${defaultChannel.defaultShippingZone?.name || 'Not set'}`);
       }
-    `;
-
-    const zoneResult = await client.request(CREATE_ZONE, { memberIds: [countryId] });
-    const zoneId = zoneResult.createZone.id;
-    console.log(`✅ Zone created (ID: ${zoneId})`);
-
-    // Create tax category
-    console.log('3️⃣  Creating tax category (Standard)...');
-    const CREATE_TAX_CATEGORY = `
-      mutation {
-        createTaxCategory(input: {
-          name: "Standard"
-        }) {
-          id
-          name
-        }
-      }
-    `;
-
-    const taxCatResult = await client.request(CREATE_TAX_CATEGORY);
-    const taxCategoryId = taxCatResult.createTaxCategory.id;
-    console.log(`✅ Tax category created (ID: ${taxCategoryId})`);
-
-    // Create tax rate
-    console.log('4️⃣  Creating tax rate (20%)...');
-    const CREATE_TAX_RATE = `
-      mutation CreateTaxRate($categoryId: ID!, $zoneId: ID!) {
-        createTaxRate(input: {
-          name: "Standard Tax"
-          enabled: true
-          value: 20
-          categoryId: $categoryId
-          zoneId: $zoneId
-        }) {
-          id
-          name
-          value
-        }
-      }
-    `;
-
-    await client.request(CREATE_TAX_RATE, {
-      categoryId: taxCategoryId,
-      zoneId: zoneId
-    });
-    console.log('✅ Tax rate created (20%)');
+    }
 
     console.log('\n╔═══════════════════════════════════════════════════════════╗');
     console.log('║              ✅ SETUP COMPLETED SUCCESSFULLY!              ║');
@@ -219,9 +284,10 @@ async function setup() {
     console.log('   • Zone: Default Zone');
     console.log('   • Tax Category: Standard');
     console.log('   • Tax Rate: 20%');
+    console.log('   • Channel: Tax Zone assigned');
     console.log('\n🚀 You can now import products:');
-    console.log('   export CSV_PATH="$(pwd)/living-room.csv"');
-    console.log('   node import-products.js');
+    console.log('   export CSV_PATH="output/living-room.csv"');
+    console.log('   node scripts/import-products.js');
 
   } catch (error) {
     console.error('\n❌ Setup failed:', error.message);

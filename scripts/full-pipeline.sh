@@ -1,8 +1,19 @@
 #!/bin/bash
 # full-pipeline.sh - Pipeline completo: Scrapear + Importar
-# Usage: bash full-pipeline.sh
+# Usage: bash scripts/full-pipeline.sh
 
 set -e
+
+# Get script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+OUTPUT_DIR="$PROJECT_ROOT/output"
+
+# Ensure output directory exists
+mkdir -p "$OUTPUT_DIR"
+
+# Change to project root for relative paths
+cd "$PROJECT_ROOT"
 
 echo "🚀 Today's Furniture → Vendure - Pipeline Completo"
 echo "===================================================="
@@ -41,16 +52,16 @@ for category in "${CATEGORIES[@]}"; do
   echo "🔍 Scrapeando: $category"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   
-  node scraper.js \
+  node scripts/scraper.js \
     --startUrl="$BASE_URL/$category/" \
-    --out="$category.xlsx" \
+    --out="$category.csv" \
     --jsonOut="$category.json" \
     --concurrency=$CONCURRENCY \
     --maxPages=$MAX_PAGES \
     --delayMs=$DELAY_MS
   
   echo ""
-  echo "✅ $category.xlsx generado"
+  echo "✅ $category.csv generado en output/"
   echo ""
   sleep 2
 done
@@ -81,33 +92,33 @@ echo "   User: $ADMIN_USER"
 echo "   Stock: $DEFAULT_STOCK_ON_HAND unidades"
 echo ""
 
-XLSX_FILES=($(ls *.xlsx 2>/dev/null))
+CSV_FILES=($(ls "$OUTPUT_DIR"/*.csv 2>/dev/null | xargs -n1 basename))
 
-if [ ${#XLSX_FILES[@]} -eq 0 ]; then
-  echo "❌ No se encontraron archivos .xlsx"
+if [ ${#CSV_FILES[@]} -eq 0 ]; then
+  echo "❌ No se encontraron archivos .csv en output/"
   exit 1
 fi
 
-echo "📋 Archivos a importar: ${#XLSX_FILES[@]}"
+echo "📋 Archivos a importar: ${#CSV_FILES[@]}"
 echo ""
 
-TOTAL=${#XLSX_FILES[@]}
+TOTAL=${#CSV_FILES[@]}
 CURRENT=0
 SUCCESS=0
 FAILED=0
 
 IMPORT_START=$(date +%s)
 
-for file in "${XLSX_FILES[@]}"; do
+for file in "${CSV_FILES[@]}"; do
   CURRENT=$((CURRENT + 1))
   
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "📥 [$CURRENT/$TOTAL] Importando: $file"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   
-  export XLSX_PATH="$(pwd)/$file"
+  export CSV_PATH="$OUTPUT_DIR/$file"
   
-  if node import-products.js; then
+  if node scripts/import-products.js; then
     SUCCESS=$((SUCCESS + 1))
     echo "✅ $file importado"
   else
@@ -152,6 +163,6 @@ echo "   ${ADMIN_API/admin-api/admin}"
 echo ""
 
 # Listar archivos generados
-echo "📁 Archivos generados:"
-ls -lh *.xlsx *.json 2>/dev/null | awk '{print "   " $9 " (" $5 ")"}'
+echo "📁 Archivos generados en output/:"
+ls -lh "$OUTPUT_DIR"/*.csv "$OUTPUT_DIR"/*.json 2>/dev/null | awk '{print "   " $9 " (" $5 ")"}'
 echo ""

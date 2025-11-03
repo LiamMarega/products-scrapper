@@ -17,6 +17,11 @@ Thumbs.db
 scrape.xlsx
 *.xlsx
 *.json
+*.csv
+
+# Output directory (generated files)
+output/
+!output/.gitkeep
 
 # Logs, cache, temp
 logs/
