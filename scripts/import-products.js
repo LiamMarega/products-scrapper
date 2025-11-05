@@ -16,7 +16,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
-const OUTPUT_DIR = path.resolve(PROJECT_ROOT, 'output');
+const OUTPUT_DIR = path.resolve(PROJECT_ROOT, 'output',);
 
 // ============================================================================
 // CONFIGURACIÓN
@@ -31,7 +31,7 @@ function resolveCSVPath(csvPath) {
   if (csvPath) {
     return path.isAbsolute(csvPath) ? csvPath : path.resolve(PROJECT_ROOT, csvPath);
   }
-  return path.resolve(OUTPUT_DIR, 'living-room.csv');
+  return path.resolve(OUTPUT_DIR, 'vendure-products.csv');
 }
 
 const CSV_PATH = resolveCSVPath(process.env.CSV_PATH);
@@ -279,14 +279,41 @@ async function ensureCategoryFacetValue(client, categoryName) {
 // Upload image from URL
 async function uploadImageFromUrl(imageUrl, cookie) {
   try {
+    // Log URL being downloaded
+    console.log(`   📥 Downloading image: ${imageUrl}`);
+    
     // Download image
     const imageRes = await fetch(imageUrl);
     if (!imageRes.ok) {
-      throw new Error(`Failed to download image: ${imageRes.statusText}`);
+      throw new Error(`HTTP ${imageRes.status}: ${imageRes.statusText}`);
+    }
+
+    // Get content type from response headers
+    const contentType = imageRes.headers.get('content-type') || 'image/jpeg';
+    console.log(`   📊 Content-Type: ${contentType}, Status: ${imageRes.status}`);
+
+    // Validate that it's an image
+    if (!contentType.startsWith('image/')) {
+      throw new Error(`Invalid content type: ${contentType}. Expected image/*`);
     }
 
     const buffer = await imageRes.arrayBuffer();
-    const fileName = path.basename(new URL(imageUrl).pathname);
+    const bufferSize = buffer.byteLength;
+    console.log(`   📦 Downloaded ${(bufferSize / 1024).toFixed(2)} KB`);
+
+    if (bufferSize === 0) {
+      throw new Error('Downloaded image is empty');
+    }
+
+    // Get filename from URL or generate one
+    let fileName = path.basename(new URL(imageUrl).pathname);
+    if (!fileName || !fileName.includes('.')) {
+      // Determine extension from content type
+      const ext = contentType.split('/')[1] || 'jpg';
+      fileName = `image.${ext}`;
+    }
+
+    console.log(`   📤 Uploading to Vendure as: ${fileName}`);
 
     // Create form data
     const formData = new FormData();
@@ -309,21 +336,49 @@ async function uploadImageFromUrl(imageUrl, cookie) {
 
     formData.append('operations', operations);
     formData.append('map', map);
-    formData.append('0', Buffer.from(buffer), fileName);
+    
+    // Append file with proper content type
+    // form-data accepts: append(field, value, filename, options)
+    const fileBuffer = Buffer.from(buffer);
+    formData.append('0', fileBuffer, fileName, {
+      contentType: contentType
+    });
 
     // Upload
+    console.log(`   🚀 Uploading to Vendure API...`);
     const uploadRes = await fetch(ADMIN_API, {
       method: 'POST',
       headers: {
         'cookie': cookie,
+        ...formData.getHeaders() // Include Content-Type with boundary
       },
       body: formData
     });
 
+    if (!uploadRes.ok) {
+      const errorText = await uploadRes.text();
+      throw new Error(`Upload failed: HTTP ${uploadRes.status} - ${errorText}`);
+    }
+
     const result = await uploadRes.json();
-    return result?.data?.createAssets?.[0]?.id;
+    
+    if (result.errors) {
+      throw new Error(`GraphQL errors: ${JSON.stringify(result.errors)}`);
+    }
+
+    const assetId = result?.data?.createAssets?.[0]?.id;
+    if (assetId) {
+      console.log(`   ✅ Image uploaded successfully (Asset ID: ${assetId})`);
+    } else {
+      throw new Error('No asset ID returned from API');
+    }
+
+    return assetId;
   } catch (error) {
     console.error(`   ⚠️  Failed to upload image ${imageUrl}: ${error.message}`);
+    if (error.stack) {
+      console.error(`   Stack: ${error.stack}`);
+    }
     return null;
   }
 }
@@ -384,12 +439,12 @@ async function importProducts() {
         console.log(`✅ Product created (ID: ${productId})`);
 
         // 2. Create default variant
-        const price = priceToCents(row.price);
+        const price = 0; // Precio fijo en 0
         const variantInput = [{
           productId: productId,
           sku: row.sku || row.slug,
           price: price,
-          stockOnHand: parseInt(row.stockOnHand) || DEFAULT_STOCK,
+          stockOnHand: 100, // Stock fijo en 100
           translations: [
             {
               languageCode: DEFAULT_LANGUAGE,
@@ -398,7 +453,7 @@ async function importProducts() {
           ]
         }];
 
-        console.log(`💰 Creating variant (Price: $${row.price}, Stock: ${variantInput[0].stockOnHand})...`);
+        console.log(`💰 Creating variant (Price: $0.00, Stock: 100)...`);
         await client.request(CREATE_PRODUCT_VARIANTS, { input: variantInput });
         console.log('✅ Variant created');
 
@@ -430,23 +485,33 @@ async function importProducts() {
         if (row.assets) {
           const imageUrls = row.assets.split('|').map(url => url.trim()).filter(Boolean);
           if (imageUrls.length > 0) {
-            console.log(`📸 Uploading ${imageUrls.length} images...`);
+            console.log(`📸 Processing ${imageUrls.length} images...`);
             const assetIds = [];
+            let successCount = 0;
+            let failureCount = 0;
             
-            for (const url of imageUrls) {
+            for (let idx = 0; idx < imageUrls.length; idx++) {
+              const url = imageUrls[idx];
+              console.log(`   [${idx + 1}/${imageUrls.length}] Processing image...`);
               const assetId = await uploadImageFromUrl(url, cookie);
               if (assetId) {
                 assetIds.push(assetId);
+                successCount++;
+              } else {
+                failureCount++;
               }
             }
 
             if (assetIds.length > 0) {
+              console.log(`   🔗 Linking ${assetIds.length} images to product...`);
               await client.request(UPDATE_PRODUCT_ASSETS, {
                 productId: productId,
                 assetIds: assetIds,
                 featuredAssetId: assetIds[0] // Primera imagen como destacada
               });
-              console.log(`✅ Uploaded ${assetIds.length}/${imageUrls.length} images (featured: first image)`);
+              console.log(`✅ Images linked: ${successCount} successful, ${failureCount} failed (featured: first image)`);
+            } else {
+              console.log(`   ⚠️  No images were successfully uploaded (${failureCount} failed)`);
             }
           }
         }
