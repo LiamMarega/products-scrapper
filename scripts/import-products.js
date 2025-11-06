@@ -1,6 +1,6 @@
 // import-products.js - Importador de productos CSV a Vendure usando GraphQL API
-// Usage: node import-products.js
-// CSV Path: Usar variable de entorno CSV_PATH o por defecto living-room.csv
+// Usage: node scripts/import-products.js
+// CSV Path: Usar variable de entorno CSV_PATH o por defecto output/vendure-import.csv
 
 import { GraphQLClient } from 'graphql-request';
 import fetch from 'cross-fetch';
@@ -16,22 +16,22 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
-const OUTPUT_DIR = path.resolve(PROJECT_ROOT, 'output',);
+const OUTPUT_DIR = path.resolve(PROJECT_ROOT, 'output');
 
 // ============================================================================
 // CONFIGURACIÓN
 // ============================================================================
 
-const ADMIN_API = process.env.ADMIN_API || 'http://localhost:3000/admin-api';
+const ADMIN_API = process.env.ADMIN_API || 'https://admin.floridahomefurniture.com/admin-api';
 const ADMIN_USER = process.env.ADMIN_USER || 'superadmin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'superadmin';
 
-// Resolve CSV path - default to output/living-room.csv
+// Resolve CSV path - default to output/vendure-import.csv (el que genera el scraper)
 function resolveCSVPath(csvPath) {
   if (csvPath) {
     return path.isAbsolute(csvPath) ? csvPath : path.resolve(PROJECT_ROOT, csvPath);
   }
-  return path.resolve(OUTPUT_DIR, 'vendure-products.csv');
+  return path.resolve(OUTPUT_DIR, 'garcias-furniture.csv');
 }
 
 const CSV_PATH = resolveCSVPath(process.env.CSV_PATH);
@@ -197,7 +197,7 @@ function slugify(str) {
     .replace(/^-+|-+$/g, '');
 }
 
-// Convert price string to cents (e.g., "350.00" -> 35000)
+// (ya no usamos el precio real, pero dejamos la función por si la necesitás)
 function priceToCents(priceStr) {
   const cleaned = String(priceStr).replace(/[^0-9.]/g, '');
   const price = parseFloat(cleaned) || 0;
@@ -338,9 +338,9 @@ async function uploadImageFromUrl(imageUrl, cookie) {
     formData.append('map', map);
     
     // Append file with proper content type
-    // form-data accepts: append(field, value, filename, options)
     const fileBuffer = Buffer.from(buffer);
-    formData.append('0', fileBuffer, fileName, {
+    formData.append('0', fileBuffer, {
+      filename: fileName,
       contentType: contentType
     });
 
@@ -383,6 +383,64 @@ async function uploadImageFromUrl(imageUrl, cookie) {
   }
 }
 
+// Delay helpers
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function randomDelay(min = 100, max = 300) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// Agrupar filas CSV en productos + variantes (formato Vendure)
+function groupRowsByProduct(rows) {
+  const groups = [];
+  let currentGroup = null;
+
+  for (const row of rows) {
+    const name = row.name ? row.name.trim() : '';
+    const assetsRaw = row.assets || '';
+    const assets = assetsRaw
+      .split('|')
+      .map(a => a.trim())
+      .filter(Boolean);
+
+    const hasName = name.length > 0;
+    const hasAssets = assets.length > 0;
+
+    if (hasName) {
+      // si no tiene imágenes, se salta todo el producto
+      if (!hasAssets) {
+        console.log(`⚠️  Skip producto sin imágenes en CSV: "${name}"`);
+        currentGroup = null;
+        continue;
+      }
+
+      currentGroup = {
+        productRow: { ...row, name },
+        variantRows: []
+      };
+      groups.push(currentGroup);
+    }
+
+    // si no hay grupo actual, ignoramos la fila (variante sin cabecera)
+    if (!currentGroup) {
+      continue;
+    }
+
+    const hasSku = row.sku && row.sku.trim();
+    if (!hasSku) {
+      console.log(`   ⏭️  Variante sin SKU saltada para producto "${currentGroup.productRow.name}"`);
+      continue;
+    }
+
+    currentGroup.variantRows.push(row);
+  }
+
+  // Filtrar grupos sin variantes válidas
+  return groups.filter(g => g.variantRows.length > 0);
+}
+
 // ============================================================================
 // MAIN IMPORT FUNCTION
 // ============================================================================
@@ -404,20 +462,24 @@ async function importProducts() {
 
     // Parse CSV
     console.log('📄 Parsing CSV file...');
-    const products = await parseCSV(CSV_PATH);
-    console.log(`✅ Found ${products.length} products\n`);
+    const rows = await parseCSV(CSV_PATH);
+    console.log(`✅ Found ${rows.length} rows in CSV`);
 
-    // Process each product
+    const productGroups = groupRowsByProduct(rows);
+    console.log(`📊 ${productGroups.length} productos con al menos una variante válida\n`);
+
+    // Process each product group
     let successCount = 0;
     let errorCount = 0;
 
-    for (let i = 0; i < products.length; i++) {
-      const row = products[i];
+    for (let i = 0; i < productGroups.length; i++) {
+      const group = productGroups[i];
+      const { productRow, variantRows } = group;
       const productNum = i + 1;
 
       try {
         console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-        console.log(`📦 [${productNum}/${products.length}] ${row.name}`);
+        console.log(`📦 [${productNum}/${productGroups.length}] ${productRow.name}`);
         console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
         // 1. Create product
@@ -426,43 +488,26 @@ async function importProducts() {
           translations: [
             {
               languageCode: DEFAULT_LANGUAGE,
-              name: row.name,
-              slug: row.slug,
-              description: row.description || ''
+              name: productRow.name,
+              slug: productRow.slug && productRow.slug.trim()
+                ? productRow.slug.trim()
+                : slugify(productRow.name),
+              description: productRow.description || ''
             }
           ]
         };
 
         console.log('🔨 Creating product...');
-        const product = await client.request(CREATE_PRODUCT, { input: productInput });
-        const productId = product.createProduct.id;
+        const productRes = await client.request(CREATE_PRODUCT, { input: productInput });
+        const productId = productRes.createProduct.id;
         console.log(`✅ Product created (ID: ${productId})`);
 
-        // 2. Create default variant
-        const price = 0; // Precio fijo en 0
-        const variantInput = [{
-          productId: productId,
-          sku: row.sku || row.slug,
-          price: price,
-          stockOnHand: 100, // Stock fijo en 100
-          translations: [
-            {
-              languageCode: DEFAULT_LANGUAGE,
-              name: row.name
-            }
-          ]
-        }];
-
-        console.log(`💰 Creating variant (Price: $0.00, Stock: 100)...`);
-        await client.request(CREATE_PRODUCT_VARIANTS, { input: variantInput });
-        console.log('✅ Variant created');
-
-        // 3. Process categories (facets)
-        if (row.facets) {
+        // 2. Process categories (facets)
+        if (productRow.facets) {
           console.log('🏷️  Processing categories...');
-          const facets = row.facets.split('|').map(f => {
+          const facets = productRow.facets.split('|').map(f => {
             const [key, value] = f.split(':');
-            return { key: key.trim(), value: value.trim() };
+            return { key: (key || '').trim(), value: (value || '').trim() };
           });
 
           const categoryFacets = facets.filter(f => f.key === 'category');
@@ -481,14 +526,18 @@ async function importProducts() {
           }
         }
 
-        // 4. Upload images
-        if (row.assets) {
-          const imageUrls = row.assets.split('|').map(url => url.trim()).filter(Boolean);
+        // 3. Upload images (assets columna del producto)
+        if (productRow.assets) {
+          const imageUrls = productRow.assets
+            .split('|')
+            .map(url => url.trim())
+            .filter(Boolean);
+
           if (imageUrls.length > 0) {
             console.log(`📸 Processing ${imageUrls.length} images...`);
             const assetIds = [];
-            let successCount = 0;
-            let failureCount = 0;
+            let successImgCount = 0;
+            let failureImgCount = 0;
             
             for (let idx = 0; idx < imageUrls.length; idx++) {
               const url = imageUrls[idx];
@@ -496,9 +545,9 @@ async function importProducts() {
               const assetId = await uploadImageFromUrl(url, cookie);
               if (assetId) {
                 assetIds.push(assetId);
-                successCount++;
+                successImgCount++;
               } else {
-                failureCount++;
+                failureImgCount++;
               }
             }
 
@@ -509,28 +558,61 @@ async function importProducts() {
                 assetIds: assetIds,
                 featuredAssetId: assetIds[0] // Primera imagen como destacada
               });
-              console.log(`✅ Images linked: ${successCount} successful, ${failureCount} failed (featured: first image)`);
+              console.log(`✅ Images linked: ${successImgCount} successful, ${failureImgCount} failed (featured: first image)`);
             } else {
-              console.log(`   ⚠️  No images were successfully uploaded (${failureCount} failed)`);
+              console.log(`   ⚠️  No images were successfully uploaded (${failureImgCount} failed)`);
             }
           }
         }
 
-        console.log(`\n✅ [${productNum}/${products.length}] Successfully imported: ${row.name}`);
+        // 4. Create variants (todas con precio 0)
+        const variantInputs = variantRows.map(row => {
+          const optionValues = (row.optionValues || '')
+            .split('|')
+            .map(v => v.trim())
+            .filter(Boolean);
+
+          const variantName = optionValues.length
+            ? `${productRow.name} ${optionValues.join(' / ')}`
+            : productRow.name;
+
+          const stock = row.stockOnHand
+            ? parseInt(row.stockOnHand, 10) || DEFAULT_STOCK
+            : DEFAULT_STOCK;
+
+          return {
+            productId: productId,
+            sku: row.sku || row.slug || slugify(variantName),
+            price: 0, // siempre en 0 en Vendure
+            stockOnHand: stock,
+            translations: [
+              {
+                languageCode: DEFAULT_LANGUAGE,
+                name: variantName
+              }
+            ]
+          };
+        });
+
+        console.log(`💰 Creating ${variantInputs.length} variants (Price: $0.00)...`);
+        await client.request(CREATE_PRODUCT_VARIANTS, { input: variantInputs });
+        console.log('✅ Variants created');
+
+        console.log(`\n✅ [${productNum}/${productGroups.length}] Successfully imported: ${productRow.name}`);
         successCount++;
 
       } catch (error) {
         errorCount++;
-        console.error(`\n❌ [${productNum}/${products.length}] Failed: ${row.name}`);
+        console.error(`\n❌ [${productNum}/${productGroups.length}] Failed: ${productRow.name}`);
         console.error(`   Error: ${error.message}`);
         if (error.response?.errors) {
           console.error(`   GraphQL Errors:`, JSON.stringify(error.response.errors, null, 2));
         }
       }
 
-      // Small delay between products
-      if (i < products.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 200));
+      // Delay aleatorio 100–300 ms entre productos
+      if (i < productGroups.length - 1) {
+        await sleep(randomDelay(100, 300));
       }
     }
 
@@ -540,7 +622,7 @@ async function importProducts() {
     console.log('╚═══════════════════════════════════════════════════════════╝');
     console.log(`✅ Successful: ${successCount}`);
     console.log(`❌ Failed: ${errorCount}`);
-    console.log(`📦 Total: ${products.length}`);
+    console.log(`📦 Total products: ${productGroups.length}`);
     console.log(`\n🌐 View your products at: ${ADMIN_API.replace('/admin-api', '/admin')}`);
 
   } catch (error) {
@@ -553,12 +635,12 @@ async function importProducts() {
 }
 
 // Execute
-  importProducts()
-    .then(() => {
+importProducts()
+  .then(() => {
     console.log('\n🎉 Import completed!');
-      process.exit(0);
-    })
-    .catch(err => {
+    process.exit(0);
+  })
+  .catch(err => {
     console.error('\n💥 Unexpected error:', err.message);
-      process.exit(1);
-    });
+    process.exit(1);
+  });
